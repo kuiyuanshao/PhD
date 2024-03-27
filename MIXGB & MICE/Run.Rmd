@@ -1,0 +1,1524 @@
+---
+title: "Run"
+author: "Kuiyuan Shao"
+date: '2023-07-01'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, fig.height=5, fig.width=5}
+files <- paste0('./HCHS/SampleData_', str_pad(1:1000, nchar(1000), pad = 0), ".RData")
+pb <- progress_bar$new(
+    format = "Running :what [:bar] :percent eta: :eta",
+    clear = FALSE, total = 100, width = 60)
+t_lm <- t_binom <- midas_lm <- midas_binom <- pmm_lm <- pmm_binom <- NULL
+for (i in 1:100){
+  load(files[i])
+  samp <- as.data.frame(samp) %>%
+    select(-contains("bio2")) %>%
+    select(-contains("avg")) %>%
+    select(-c(hhid, dat.num, subid, v.num, 
+            age.strat, hisp.strat)) %>%
+    select(-contains("W.")) %>%
+    select(-c(ln_na_true, ln_k_true, ln_kcal_true, 
+            ln_protein_true, ln_na_bio1, ln_k_bio1,
+            ln_kcal_bio1, ln_protein_bio1, 
+            age, bmi, sex)) %>%
+    select(-solnas)
+
+  samp$bkg <- as.factor(samp$bkg)
+  col_ind <- which(names(samp) == "c_ln_na_true"):which(names(samp) == "c_ln_protein_true")
+  samp_mis <- subsel(samp, targetcols = col_ind)
+
+  data_miss_conv <- rMIDAS::convert(samp_mis, 
+                                  bin_cols = c("usborn", "high_chol", "female", 
+                                               "bkg_pr", "bkg_o", "hypertension", "R"),
+                                  cat_cols = c("bkg"),
+                                  minmax_scale = TRUE)
+
+  model <- rMIDAS::train(data_miss_conv, training_epochs = 10, cont_adj = 20, 
+                       layer_structure = c(256, 256, 256), input_drop = 0.95)
+
+  complete_datasets <- rMIDAS::complete(model, m = 5)
+  midaslm <- rMIDAS::combine("sbp ~ c_age + c_bmi + c_ln_na_true + 
+                            high_chol + usborn + female + bkg_pr + bkg_o", 
+                           complete_datasets, family = "gaussian")
+
+  midasbinom <- rMIDAS::combine("hypertension ~ c_age + c_bmi + c_ln_na_true + 
+                            high_chol + usborn + female + bkg_pr + bkg_o", 
+                              complete_datasets, family = "quasibinomial")
+  
+  pmm_obj <- mice(samp_mis, m = 5, print = FALSE, 
+                  remove.collinear = F, maxit = 10,
+                  maxcor = 1.0001, 
+                  predictorMatrix = quickpred(samp_mis))
+  
+  lmfit <- with(data = pmm_obj, exp = lm(sbp ~ c_age + c_bmi + c_ln_na_true + 
+                            high_chol + usborn + female + bkg_pr + bkg_o))
+  binomfit <- with(data = pmm_obj, exp = glm(hypertension ~ c_age + c_bmi + c_ln_na_true + 
+                            high_chol + usborn + female + bkg_pr + bkg_o, 
+                            family = "quasibinomial"))
+  
+  midas_lm <- rbind(midas_lm, midaslm$estimate)
+  
+  midas_binom <- rbind(midas_binom, midasbinom$estimate)
+  
+  pmm_lm <- rbind(pmm_lm, summary(pool(lmfit))[, 2])
+  
+  pmm_binom <- rbind(pmm_binom, summary(pool(binomfit))[, 2])
+
+  t_lm <- rbind(t_lm, coef(glm(sbp ~ c_age + c_bmi + c_ln_na_true + 
+                         high_chol + usborn + female + bkg_pr + bkg_o, 
+                         samp, family = "gaussian")))
+
+  t_binom <- rbind(t_binom, coef(glm(hypertension ~ c_age + c_bmi + c_ln_na_true + 
+                              high_chol + usborn + female + bkg_pr + bkg_o, 
+                            samp, family = "quasibinomial")))
+  
+  pb$tick(tokens = list(what = "LOOP   "))
+  Sys.sleep(1 / 10000)
+}
+
+names <- colnames(t_lm)
+
+midas_lm <- as.data.frame(midas_lm)
+midas_lm$Type <- "midas"
+names(midas_lm) <- c(names, "Type")
+midas_binom <- as.data.frame(midas_binom)
+midas_binom$Type <- "midas"
+names(midas_binom) <- c(names, "Type")
+
+pmm_lm <- as.data.frame(pmm_lm)
+pmm_lm$Type <- "pmm"
+names(pmm_lm) <- c(names, "Type")
+pmm_binom <- as.data.frame(pmm_binom)
+pmm_binom$Type <- "pmm"
+names(pmm_binom) <- c(names, "Type")
+
+t_lm <- as.data.frame(t_lm)
+t_lm$Type <- "real"
+t_binom <- as.data.frame(t_binom)
+t_binom$Type <- "real"
+
+
+ggplot() + geom_point(aes(x = t_lm$c_ln_na_true,
+                          y = midas_lm$c_ln_na_true))
+
+ggplot() + geom_point(aes(x = t_lm$c_ln_na_true,
+                          y = pmm_lm$c_ln_na_true))
+
+ggplot() + geom_point(aes(x = t_binom$c_ln_na_true,
+                          y = midas_binom$c_ln_na_true))
+
+ggplot() + geom_point(aes(x = t_binom$c_ln_na_true,
+                          y = pmm_binom$c_ln_na_true))
+
+
+full_lm <- rbind(pmm_lm, midas_lm, t_lm)
+ggplot(full_lm) + geom_boxplot(aes(x = Type,
+                                 y = c_ln_na_true))
+
+full_binom <- rbind(pmm_binom, midas_binom, t_binom)
+ggplot(full_binom) + geom_boxplot(aes(x = Type,
+                                      y = c_ln_na_true))
+
+save(midas_lm, midas_binom, pmm_lm, pmm_binom, t_lm, t_binom, file = "midas_sim2.R")
+```
+
+
+```{r}
+files <- paste0('./HCHS/SampleData_', str_pad(1:1000, nchar(1000), pad = 0), ".RData")
+pb <- progress_bar$new(
+    format = "Running :what [:bar] :percent eta: :eta",
+    clear = FALSE, total = 100, width = 60)
+t_lm <- t_binom <- midas_lm <- midas_binom <- pmm_lm <- pmm_binom <- NULL
+for (i in 1:100){
+  load(files[i])
+  samp <- as.data.frame(samp) %>%
+    select(-contains("bio2")) %>%
+    select(-contains("avg")) %>%
+    select(-c(hhid, dat.num, subid, v.num, 
+            age.strat, hisp.strat)) %>%
+    select(-contains("W.")) %>%
+    select(-c(ln_na_true, ln_k_true, ln_kcal_true, 
+            ln_protein_true, ln_na_bio1, ln_k_bio1,
+            ln_kcal_bio1, ln_protein_bio1, 
+            age, bmi, sex)) %>%
+    select(-solnas)
+
+  samp$bkg <- as.factor(samp$bkg)
+  col_ind <- which(names(samp) == "c_ln_na_true"):which(names(samp) == "c_ln_protein_true")
+  samp_mis <- subsel(samp, targetcols = col_ind)
+
+  data_miss_conv <- rMIDAS::convert(samp_mis, 
+                                  bin_cols = c("usborn", "high_chol", "female", 
+                                               "bkg_pr", "bkg_o", "hypertension", "R"),
+                                  cat_cols = c("bkg"),
+                                  minmax_scale = TRUE)
+
+  model <- rMIDAS::train(data_miss_conv, training_epochs = 10, cont_adj = 10, 
+                         layer_structure = c(256, 256), input_drop = 0.95)
+
+  complete_datasets <- rMIDAS::complete(model, m = 5)
+  midaslm <- rMIDAS::combine("sbp ~ c_age + c_bmi + c_ln_na_true + 
+                            high_chol + usborn + female + bkg_pr + bkg_o", 
+                           complete_datasets, family = "gaussian")
+
+  midasbinom <- rMIDAS::combine("hypertension ~ c_age + c_bmi + c_ln_na_true + 
+                            high_chol + usborn + female + bkg_pr + bkg_o", 
+                              complete_datasets, family = "quasibinomial")
+  
+  pmm_obj <- mice(samp_mis, m = 5, print = FALSE, 
+                  remove.collinear = F, maxit = 10,
+                  maxcor = 1.0001, 
+                  predictorMatrix = quickpred(samp_mis))
+  
+  lmfit <- with(data = pmm_obj, exp = lm(sbp ~ c_age + c_bmi + c_ln_na_true + 
+                            high_chol + usborn + female + bkg_pr + bkg_o))
+  binomfit <- with(data = pmm_obj, exp = glm(hypertension ~ c_age + c_bmi + c_ln_na_true + 
+                            high_chol + usborn + female + bkg_pr + bkg_o, 
+                            family = "quasibinomial"))
+  
+  midas_lm <- rbind(midas_lm, midaslm$estimate)
+  
+  midas_binom <- rbind(midas_binom, midasbinom$estimate)
+  
+  pmm_lm <- rbind(pmm_lm, summary(pool(lmfit))[, 2])
+  
+  pmm_binom <- rbind(pmm_binom, summary(pool(binomfit))[, 2])
+
+  t_lm <- rbind(t_lm, coef(glm(sbp ~ c_age + c_bmi + c_ln_na_true + 
+                         high_chol + usborn + female + bkg_pr + bkg_o, 
+                         samp, family = "gaussian")))
+
+  t_binom <- rbind(t_binom, coef(glm(hypertension ~ c_age + c_bmi + c_ln_na_true + 
+                              high_chol + usborn + female + bkg_pr + bkg_o, 
+                            samp, family = "quasibinomial")))
+  
+  pb$tick(tokens = list(what = "LOOP   "))
+  Sys.sleep(1 / 10000)
+}
+names <- colnames(t_lm)
+
+midas_lm <- as.data.frame(midas_lm)
+midas_lm$Type <- "midas"
+names(midas_lm) <- c(names, "Type")
+midas_binom <- as.data.frame(midas_binom)
+midas_binom$Type <- "midas"
+names(midas_binom) <- c(names, "Type")
+
+pmm_lm <- as.data.frame(pmm_lm)
+pmm_lm$Type <- "pmm"
+names(pmm_lm) <- c(names, "Type")
+pmm_binom <- as.data.frame(pmm_binom)
+pmm_binom$Type <- "pmm"
+names(pmm_binom) <- c(names, "Type")
+
+t_lm <- as.data.frame(t_lm)
+t_lm$Type <- "real"
+t_binom <- as.data.frame(t_binom)
+t_binom$Type <- "real"
+save(midas_lm, midas_binom, pmm_lm, pmm_binom, t_lm, t_binom, file = "midas_sim4.R")
+full_lm <- rbind(pmm_lm, midas_lm, t_lm)
+ggplot(full_lm) + geom_boxplot(aes(x = Type,
+                                 y = X))
+
+full_binom <- rbind(pmm_binom, midas_binom, t_binom)
+ggplot(full_binom) + geom_boxplot(aes(x = Type,
+                                      y = c_ln_na_true))
+
+
+ggplot(complete_datasets[[1]]) + geom_point(aes(x = c_ln_na_true, y = sbp))
+```
+
+```{r}
+midas_lm <- pmm_lm <- t_lm <- NULL
+for (i in 1:100){
+  true_data <- simtwophasepaper(c(1, 1))
+  true_data <- true_data[, -1]
+  err_data <- subsel(true_data, targetcols = 3)
+  
+  data_miss_conv <- rMIDAS::convert(err_data, 
+                                  bin_cols = c("Z", 
+                                               "R"),
+                                  minmax_scale = TRUE)
+
+  model <- rMIDAS::train(data_miss_conv, training_epochs = 100, cont_adj = 10, 
+                         layer_structure = c(256, 256), input_drop = 0.95)
+
+  complete_datasets <- rMIDAS::complete(model, m = 5)
+  midaslm <- rMIDAS::combine("Y ~ X + Z", 
+                           complete_datasets, family = "gaussian")
+  
+  pmm_obj <- mice(err_data, m = 5, print = FALSE, 
+                  remove.collinear = F, maxit = 10,
+                  maxcor = 1.0001, 
+                  predictorMatrix = quickpred(err_data))
+  
+  lmfit <- with(data = pmm_obj, exp = lm(Y ~ X + Z))
+  
+  midas_lm <- rbind(midas_lm, midaslm$estimate)
+  
+  pmm_lm <- rbind(pmm_lm, summary(pool(lmfit))[, 2])
+
+  t_lm <- rbind(t_lm, coef(glm(Y ~ X + Z, 
+                         true_data, family = "gaussian")))
+}
+```
+
+
+
+
+
+
+
+
+
+```{r}
+source("GAIN_R/gain_torch.R")
+source("GAIN_R/utils_torch.R")
+source("datasim.R")
+source("testFun.R")
+pacman::p_load(torch, progress)
+
+set.seed(10086)
+true_data <- simtwophasepaper(c(1, 1))
+true_data <- true_data[, -1]
+err_data <- subsel(true_data, targetcols = 3)
+err_data$R <- NULL
+
+coef <- NULL
+se <- NULL
+df <- NULL
+for (i in 1:10 * 1000){
+  gain_imp <- gain(err_data, n = i, batch_size = 128, device = "cpu")
+
+  imp <- gain_imp[[2]]
+  imp$Z <- round(gain_imp[[1]]$Z)
+  
+  imp$n <- i
+  df <- rbind(df, imp)
+  mod <- lm(Y ~ X + Z, data = imp)
+  
+  coef <- rbind(coef, coef(mod))
+  se <- rbind(se, sqrt(diag(vcov(mod))))
+}
+
+ggplot(df) + geom_point(aes(x = X, y = Y)) + facet_wrap(~n)
+
+ggplot(true_data) + geom_point(aes(x = X, y = Y))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+source("datasim.R")
+source("testFun.R")
+#source("fix_mice.R")
+pacman::p_load(tidyverse, mice, mixgb, patchwork, missForest, future.apply, ranger, rpart, rpart.plot, survey, torch, progress)
+```
+
+
+```{r}
+rfimputenorm <- function(data, ntree = 10, aux_col = 15:24){
+  mis_col <- as.numeric(which(colSums(is.na(data)) > 0))
+  mis_row <- as.numeric(which(rowSums(is.na(data)) > 0))
+  ntree <- max(1, ntree)
+  for (i in 1:length(mis_col)){
+    if (i > 1){
+      xobs <- data[-mis_row, -(mis_col[-(0:(i - 1))])]
+      xmis <- data[mis_row, -(mis_col[-(0:(i - 1))])]
+    }else{
+      xobs <- data[-mis_row, -mis_col]
+      xmis <- data[mis_row, -mis_col]
+    }
+    yobs <- data[-mis_row, mis_col[i]]
+    meobs <- data[-mis_row, aux_col[i]] - yobs
+    fit <- ranger::ranger(x = xobs, y = meobs, 
+                          num.trees = ntree,
+                          mtry = ncol(xobs) - 1)
+    
+    yhat <- predict(object = fit, data = xmis, type = "response")
+	  yimp <- rnorm(length(yhat$predictions), mean = yhat$predictions, 
+	                sd = sqrt(fit$prediction.error))
+	  data[mis_row, mis_col[i]] <- data[mis_row, aux_col[i]] - yimp
+      #data[-mis_row, mis_col[i]] <- data[-mis_row, aux_col[i]] - 
+        #apply(forest_obs, MARGIN = 1, FUN = function(s) sample(unlist(s), 1)) 
+  }
+    #return (forest_mis)
+  return (data)
+}
+```
+
+```{r}
+rfimpute <- function(data, ntree = 10, aux_col = 15:24, type = "rf"){
+  mis_col <- as.numeric(which(colSums(is.na(data)) > 0))
+  mis_row <- as.numeric(which(rowSums(is.na(data)) > 0))
+  if (type == "rf"){
+    ntree <- max(1, ntree)
+    for (i in 1:length(mis_col)){
+      if (i > 1){
+        xobs <- data[-mis_row, -(mis_col[-(0:(i - 1))])]
+        xmis <- data[mis_row, -(mis_col[-(0:(i - 1))])]
+      }else{
+        xobs <- data[-mis_row, -mis_col]
+        xmis <- data[mis_row, -mis_col]
+      }
+      yobs <- data[-mis_row, mis_col[i]]
+      meobs <- data[-mis_row, aux_col[i]] - yobs
+      fit <- ranger::ranger(x = xobs, y = yobs, 
+                            num.trees = ntree,
+                            mtry = ncol(xobs) - 1)
+      
+      nodes <- predict(
+        object = fit, data = rbind(xobs, xmis),
+        type = "terminalNodes", predict.all = TRUE
+      )
+      nodes <- ranger::predictions(nodes)
+      nodes_obs <- nodes[1:nrow(xobs), , drop = FALSE]
+      nodes_mis <- nodes[(nrow(xobs) + 1):nrow(nodes), , drop = FALSE]
+  
+      select_donors <- function(i, mehatmis = T) {
+      # Function to extract all eligible donors for each missing value
+        if (mehatmis){
+          donors <- split(meobs, nodes_obs[, i])
+          donors[as.character(nodes_mis[, i])]
+        }else{
+          donors <- split(meobs, nodes_obs[, i])
+          donors[as.character(nodes_obs[, i])]
+        }
+      }
+    
+      forest_mis <- sapply(seq_len(ntree), FUN = select_donors)
+      forest_obs <- sapply(seq_len(ntree), FUN = select_donors, mehatmis = F)
+      data[mis_row, mis_col[i]] <- data[mis_row, aux_col[i]] - 
+        apply(forest_mis, MARGIN = 1, FUN = function(s) mean(unlist(s))) 
+      #data[-mis_row, mis_col[i]] <- data[-mis_row, aux_col[i]] - 
+        #apply(forest_obs, MARGIN = 1, FUN = function(s) sample(unlist(s), 1)) 
+    }
+    #return (forest_mis)
+  }else if (type == "cart"){
+    for (i in 1:length(mis_col)){
+      if (i > 1){
+        xobs <- data[-mis_row, -(mis_col[-(0:(i - 1))])]
+        xmis <- data[mis_row, -(mis_col[-(0:(i - 1))])]
+      }else{
+        xobs <- data[-mis_row, -mis_col]
+        xmis <- data[mis_row, -mis_col]
+      }
+      yobs <- data[-mis_row, mis_col[i]]
+      meobs <- data[-mis_row, aux_col[i]] - yobs
+      fit <- rpart::rpart(meobs ~ ., data = cbind(meobs, xobs), 
+              method = "anova", control = rpart::rpart.control(minbucket = 5, 
+                cp = 1e-4))
+      leafnr <- floor(as.numeric(row.names(fit$frame[fit$where,])))
+      fit$frame$yval <- as.numeric(row.names(fit$frame))
+      nodes <- predict(object = fit, newdata = xmis)
+      donor <- lapply(nodes, function(s) meobs[leafnr == s])
+      impute <- vapply(seq_along(donor), function(s) mean(donor[[s]]), numeric(1))
+      
+      data[mis_row, mis_col[i]] <- data[mis_row, aux_col[i]] - impute
+      
+    }
+  }
+  return (data)
+}
+
+pmm <- function(yhatobs, yhatmis, yobs, k) {
+  # idx=.Call('_mice_matcher', PACKAGE = 'mice', yhatobs, yhatmis, k)
+  idx <- mice::matchindex(d = yhatobs, t = yhatmis, k = k)
+  
+  yobs[idx]
+}
+```
+
+```{r, fig.height=10, fig.width=20}
+set.seed(10086)
+true_data <- simtwophasepaper(c(1, 1))
+true_data <- true_data[, -1]
+result <- innerloop(true_data, targetcols = 3, 
+                    raking = T, 
+                    iter = 5, 
+                    type = "Simple", aux_col = 1)
+
+
+sd <- seq(0, 2, bpy = 0.05)
+
+plan(multisession, workers = 4)
+
+results_list <- NULL
+
+for (i in 1:length(sd)){
+  true_data <- simtwophasepaper(c(sd[i], sd[i]))
+  true_data <- true_data[, -1]
+  results <- future_replicate(n = 5, innerloop(true_data, targetcols = 3, 
+                    raking = T, 
+                    iter = 5, 
+                    type = "Simple", aux_col = 1))
+  results_list[[i]] <- results
+}
+
+rmse_df <- NULL
+bias_df <- NULL
+var_df <- NULL
+for (i in 1:length(sd)){
+  rmsetemp <- NULL
+  for (k in 1:5){
+    rmsetemp <- c(rmsetemp, results_list[[i]][1, ][[k]])
+    bias_df <- rbind(bias_df, results_list[[i]][2, ][[k]])
+    var_df <- rbind(var_df, results_list[[i]][3, ][[k]])
+  }
+  rmse_df <- cbind(rmse_df, rmsetemp)
+}
+colnames(rmse_df) <- sd
+rmse_df <- as.data.frame(rmse_df)
+rmse_df$mitype <- rep(unique(bias_df$mitype)[1:9], 5)
+bias_df$sd <- as.character(rep(sd, each = 5*10))
+var_df$sd <- as.character(rep(sd, each = 5*11))
+
+rmse_df <- as.data.frame(rmse_df) %>% 
+  pivot_longer(cols = 1:length(sd)) %>% 
+  rename(sd = name)
+
+save(rmse_df, bias_df, var_df, file = "Simple.RData")
+
+rmse_for_plot <- rmse_df %>% group_by(sd, mitype) %>% summarise(mean = mean(value))
+bias_for_plot <- bias_df %>% 
+  pivot_longer(cols = 1:3) %>%
+  rename(coefname = name) %>%
+  group_by(sd, mitype, coefname) %>%
+  summarise(mean = mean(value))
+
+var_for_plot <- var_df %>% 
+  pivot_longer(cols = 1:3) %>%
+  rename(coefname = name) %>%
+  group_by(sd, mitype, coefname) %>%
+  summarise(mean = mean(value)) %>%
+  filter(mitype != "rf")
+library(directlabels)
+ggplot(rmse_for_plot, 
+       aes(x = as.numeric(sd), 
+           y = mean, colour = mitype)) + 
+  geom_line() + 
+  theme_minimal() + 
+  scale_colour_discrete(guide = 'none') + 
+  geom_dl(aes(label = mitype), method = list(dl.trans(x = x + .1), "last.points")) +
+  geom_dl(aes(label = mitype), method = list(dl.trans(x = x - .1), "first.points"))
+
+ggplot(bias_for_plot, 
+       aes(x = as.numeric(sd), 
+           y = mean, colour = mitype)) + 
+  geom_line() + 
+  theme_minimal() + 
+  scale_x_continuous(expand = c(0.1, 0.4)) + 
+  scale_colour_discrete(guide = 'none') + 
+  geom_dl(aes(label = mitype), method = list(dl.trans(x = x + .1), "last.points")) +
+  geom_dl(aes(label = mitype), method = list(dl.trans(x = x - .1), "first.points")) + 
+  facet_wrap(~coefname)
+
+ggplot(var_for_plot, 
+       aes(x = as.numeric(sd), 
+           y = mean, colour = mitype)) + 
+  geom_line() + 
+  theme_minimal() + 
+  scale_x_continuous(expand = c(0.1, 0.4)) + 
+  scale_colour_discrete(guide = 'none') + 
+  geom_dl(aes(label = mitype), method = list(dl.trans(x = x + .1), "last.points")) +
+  geom_dl(aes(label = mitype), method = list(dl.trans(x = x - .1), "first.points")) + 
+  facet_wrap(~coefname)
+  
+```
+
+```{r, fig.height=10, fig.width=20}
+set.seed(10086)
+files <- paste0('./HCHS/SampleData_', str_pad(1:1000, nchar(1000), pad = 0), ".RData")
+load(files[3])
+samp <- as.data.frame(samp) %>%
+    select(-contains("bio2")) %>%
+    select(-contains("avg")) %>%
+    select(-c(hhid, dat.num, subid, v.num, 
+              age.strat, hisp.strat)) %>%
+    select(-contains("W.")) %>%
+    select(-c(ln_na_true, ln_k_true, ln_kcal_true, 
+              ln_protein_true, ln_na_bio1, ln_k_bio1,
+              ln_kcal_bio1, ln_protein_bio1, 
+              age, bmi, sex)) %>%
+  select(-solnas)
+
+samp$bkg <- as.factor(samp$bkg)
+col_ind <- which(names(samp) == "c_ln_na_true"):which(names(samp) == "c_ln_protein_true")
+samp_mis <- subsel(samp, targetcols = col_ind)
+
+data_miss_conv <- rMIDAS::convert(samp_mis, 
+                      bin_cols = c("usborn", "high_chol", "female", 
+                                   "bkg_pr", "bkg_o", "hypertension", "R"),
+                      cat_cols = c("bkg"),
+                      minmax_scale = TRUE)
+
+model <- rMIDAS::train(data_miss_conv, training_epochs = 10, cont_adj = 20, 
+                       layer_structure = c(256, 256), input_drop = 0.95)
+
+complete_datasets <- rMIDAS::complete(model, m = 5)
+midaslm <- rMIDAS::combine("sbp ~ c_age + c_bmi + c_ln_na_true + 
+                            high_chol + usborn + female + bkg_pr + bkg_o", 
+                complete_datasets, family = "gaussian")
+
+midasbinom <- rMIDAS::combine("hypertension ~ c_age + c_bmi + c_ln_na_true + 
+                            high_chol + usborn + female + bkg_pr + bkg_o", 
+                complete_datasets, family = "quasibinomial")
+
+coef(glm(sbp ~ c_age + c_bmi + c_ln_na_true + 
+              high_chol + usborn + female + bkg_pr + bkg_o, 
+            samp, family = "gaussian"))
+
+coef(glm(hypertension ~ c_age + c_bmi + c_ln_na_true + 
+                            high_chol + usborn + female + bkg_pr + bkg_o, 
+            samp, family = "quasibinomial"))
+```
+
+```{r}
+#bio1 with ME
+#true without ME
+col_ind <- which(names(samp) == "c_ln_na_true"):which(names(samp) == "c_ln_protein_true")
+aux_ind <- which(names(samp) == "c_ln_na_bio1"):which(names(samp) == "c_ln_protein_bio1")
+
+res <- innerloop(samp, targetcols = col_ind, rate = 0.2, type = "HCHS",
+                      aux_col = aux_ind, mtry = dim(samp)[2],
+                      raking = T)
+
+plan(multisession, workers = 4)
+
+results_list <- NULL
+
+for (i in 1:5){
+  load(files[i])
+  samp <- as.data.frame(samp) %>%
+    select(-contains("bio2")) %>%
+    select(-contains("avg")) %>%
+    select(-c(hhid, dat.num, subid, v.num, 
+              age.strat, hisp.strat)) %>%
+    select(-contains("W.")) %>%
+    select(-c(ln_na_true, ln_k_true, ln_kcal_true, 
+              ln_protein_true, ln_na_bio1, ln_k_bio1,
+              ln_kcal_bio1, ln_protein_bio1, 
+              age, bmi, sex)) %>%
+  select(-solnas)
+  samp$bkg <- as.factor(samp$bkg)
+  true_data <- samp
+  results <- innerloop(true_data, targetcols = col_ind, 
+                       raking = T, 
+                       iter = 5, 
+                       type = "HCHS", aux_col = aux_ind)
+  results_list[[i]] <- results
+}
+
+rmse_df <- NULL
+bias_df1 <- NULL
+var_df1 <- NULL
+bias_df2 <- NULL
+var_df2 <- NULL
+for (i in 1:5){
+  bias_df1 <- rbind(bias_df1, results_list[[i]][[2]])
+  var_df1 <- rbind(var_df1, results_list[[i]][[4]])
+  bias_df2 <- rbind(bias_df2, results_list[[i]][[3]])
+  var_df2 <- rbind(var_df2, results_list[[i]][[5]])
+  rmse_df <- rbind(rmse_df, results_list[[i]][[1]])
+}
+rmse_df <- as.data.frame(rmse_df)
+rmse_df$mitype <- rep(unique(bias_df1$mitype)[1:9], 5)
+
+rmse_df <- as.data.frame(rmse_df) %>% 
+  pivot_longer(cols = 1:4) %>% 
+  rename(var = name)
+
+save(rmse_df, bias_df1, var_df1, bias_df2, var_df2, file = "HCHS1.RData")
+
+
+bias_for_plot1 <- bias_df1 %>% 
+  pivot_longer(cols = 1:9) %>%
+  rename(coefname = name) %>%
+  filter(coefname == "c_ln_na_true")
+var_for_plot1 <- var_df1 %>% 
+  pivot_longer(cols = 1:9) %>%
+  rename(coefname = name) %>%
+  filter(coefname == "c_ln_na_true")
+bias_for_plot2 <- bias_df2 %>% 
+  pivot_longer(cols = 1:9) %>%
+  rename(coefname = name) %>%
+  filter(coefname == "c_ln_na_true")
+var_for_plot2 <- var_df2 %>% 
+  pivot_longer(cols = 1:9) %>%
+  rename(coefname = name)  %>%
+  filter(coefname == "c_ln_na_true")
+
+
+library(directlabels)
+ggplot(rmse_df, 
+       aes(x = mitype, 
+           y = value)) + 
+  geom_boxplot() + 
+  theme_minimal() + 
+  facet_wrap(~var, scales = "free")
+
+ggplot(bias_for_plot2, 
+       aes(x = mitype, 
+           y = value)) + 
+  geom_boxplot() + 
+  theme_minimal() + 
+  facet_wrap(~coefname, scales = "free")
+
+ggplot(var_for_plot1, 
+       aes(x = mitype, 
+           y = value)) + 
+  geom_boxplot() + 
+  theme_minimal() + 
+  facet_wrap(~coefname, scales = "free")
+```
+
+```{r, warning = F}
+load("simpopu_info.RData")
+set.seed(10086)
+true_data <- dataSim(mu, sigma, ncov = 10, sd = 2)
+rmse <- innerloop(true_data, raking = F, iter = 1)
+col_ind <- 3:12
+
+data_mis <- subsel(true_data, targetcols = 4, rate = 0.2)
+row_ind <- as.numeric(which(rowSums(is.na(data_mis)) > 0))
+cal_function(samp_mis, type = "HCHS")
+true_data <- simtwophasepaper(c(2, 2))
+#rmse <- innerloop(true_data, raking = F, iter = 1, targetcols = 4, aux_col = 2)
+#rmse
+
+
+new_true <- as.data.frame(true_data[, col_ind]) %>% 
+    slice(rep(row_number(), 5))
+
+#true_data <- dataSim(mu, sigma, ncov = 10, sd = 0.01)
+data_init <- rfimpute(data_mis, ntree = 10, type = "rf")
+#data_rf <- mice(data_mis, method = "rf", m = 1, print = F)
+#names(data_init) <- paste0(names(data_init), 1)
+sqrt(colMeans((as.matrix(data_init[, col_ind]) - as.matrix(true_data[, col_ind]))^2))
+
+#coef(lm(Y ~ X + Z, data_init))
+ggplot() + geom_point(aes(x = data_init$x1, y = true_data$lm_Y))
+ggplot() + geom_point(aes(x = true_data$x1, y = true_data$lm_Y))
+
+sqrt((coef(glm(pois_Y ~ x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10, data = data_init, family = poisson))[-1] - 
+  coef(glm(pois_Y ~ x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10, data = true_data, family = poisson()))[-1])^2)
+
+mice_obj <- mice(data_mis, print = F, m = 1, maxcor = 1.0001, remove.collinear = F)
+#coef(lm(Y ~ X + Z, complete(mice_obj)))
+sqrt(mean((coef(lm(lm_Y ~ x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10, complete(mice_obj)))[-1] - 
+  coef(lm(lm_Y ~ x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10, true_data))[-1])^2))
+
+sqrt(colMeans((as.matrix(complete(mice_obj)[, col_ind]) - as.matrix(true_data[, col_ind]))^2))
+```
+
+```{r}
+data <- data_mis
+
+#data_mis <- cbind(data_mis, data_init[, 3:12])
+data_mixgb <- mixgb(data_mis, m = 1)
+data_mixgb_data <- as.data.frame(data_mixgb$imputed.data[[1]])
+
+yhatobs <- data_mixgb$params$yhatobs.list
+yobs <- data_mixgb_data[-row_ind, col_ind]
+
+sqrt(colMeans((as.matrix(data_mixgb_data[, col_ind]) -
+                             as.matrix(true_data[, col_ind]))^2))
+
+data_mixgb <- mixgb(data, m = 1, pmm.type = NULL)
+yhatmis <- as.data.frame(data_mixgb[[1]])[row_ind, col_ind]
+me_obs <- data[-row_ind, 18:27] - yobs
+aux_ind <- 18:27
+
+for (i in 1:length(col_ind)){
+  mehatobs <- data[-row_ind, aux_ind[i]] - yhatobs[[i]]
+  mehatmis <- data[row_ind, aux_ind[i]] - yhatmis[, i]
+  pmm_res <- pmm(mehatobs, mehatmis, me_obs[, i], k = 5)
+  final <- data[row_ind, aux_ind[i]] - pmm_res
+  data_mixgb_data[row_ind, col_ind[i]] <- final
+}
+sqrt(colMeans((as.matrix(data_mixgb_data[, col_ind]) -
+                             as.matrix(true_data[, col_ind]))^2))
+#Get yhatmis and yhatobs, substitue the yhatobs to the yobs original index
+
+data_mis[, 3:12] <- data_mis[, 18:27] - data_mis[, 3:12]
+mod <- lm(x1star ~ x1, data = true_data)
+data_mixgb <- mixgb(data_mis, m = 1)
+data_mixgb_data <- as.data.frame(data_mixgb[[1]])
+
+data_mixgb_data[, 3:12] <- data_mis[, 18:27] - data_mixgb_data[, 3:12]
+
+sqrt(colMeans((as.matrix(data_mixgb_data[, col_ind]) -
+                             as.matrix(true_data[, col_ind]))^2))
+
+
+
+#diff <- as.matrix(data_mis[data_mis$R == 1, 18:27]) - as.matrix(data_mis[data_mis$R == 1, 3:12])
+#data_init <- data_mis
+#data_init[data_mis$R == 0, 3:12] <- data_mis[data_mis$R == 0, 18:27] + sample(sum(data_mis$R == 0), diff)
+
+pmm_data <- mice(data_mis, m = 5, print = F, 
+                 remove.collinear = F,
+                 visitSequence = NULL,
+                 donors = 5, maxcor = 1.0001)
+pmm_imp <- mice::complete(pmm_data, action = "long")[, -c(1, 2)]
+
+new_true <- as.data.frame(true_data[, col_ind]) %>% 
+    slice(rep(row_number(), 5))
+sqrt(colMeans((as.matrix(pmm_imp[, col_ind]) -
+                             as.matrix(new_true))^2))
+
+
+
+
+```
+
+```{r}
+files <- paste0('./HCHS/SampleData_', str_pad(1:1000, nchar(1000), pad = 0), ".RData")
+load(files[1])
+samp <- as.data.frame(samp) %>%
+    select(-contains("bio2")) %>%
+    select(-contains("avg")) %>%
+    select(-c(hhid, dat.num, subid, v.num, 
+              age.strat, hisp.strat)) %>%
+    select(-contains("W.")) %>%
+    select(-c(ln_na_true, ln_k_true, ln_kcal_true, 
+              ln_protein_true, ln_na_bio1, ln_k_bio1,
+              ln_kcal_bio1, ln_protein_bio1, 
+              age, bmi, sex))
+samp$bkg <- as.factor(samp$bkg)
+    
+#bio1 with ME
+#true without ME
+col_ind <- which(names(samp) == "c_ln_na_true"):which(names(samp) == "c_ln_protein_true")
+samp_mis <- subsel(samp, targetcols = col_ind, rate = 0.2, type = "HCHS")
+
+pmm_samp <- mice(samp_mis, m = 5, print = F, 
+                 remove.collinear = F,
+                 visitSequence = NULL,
+                 maxcor = 1,
+                 donors = 5)
+
+pmm_imp <- mice::complete(pmm_samp, action = "long")[, -c(1, 2)]
+
+new_true <- as.data.frame(samp[, col_ind]) %>% 
+    slice(rep(row_number(), 5))
+colMeans((as.matrix(pmm_imp[, col_ind]) -
+                             as.matrix(new_true))^2)
+
+pred <- predict(k, newdata = samp_mis[samp_mis$R == 0, ])
+
+mean((pred - samp[samp_mis$R == 0, ]$c_ln_na_true)^2)
+
+quickpred(samp_mis, minpur = 0.3)
+summary(lm(c_ln_kcal_true~c_ln_na_true+c_ln_na_bio1, pmm_imp))
+```
+
+```{r}
+data <- samp_mis
+r <- !is.na(samp_mis)
+j <- "c_ln_na_true"
+blocks <- pmm_samp$blocks
+visitSequence <- pmm_samp$visitSequence
+i = 1
+where <- switch("missing",
+                missing = is.na(samp_mis),
+                all = matrix(TRUE, nrow = nrow(samp_mis),
+                             ncol = ncol(samp_mis)),
+                none = matrix(FALSE, nrow = nrow(samp_mis),
+                              ncol = ncol(samp_mis)),
+                observed = !is.na(samp_mis)
+                )
+imp <- initialize.imp(
+    samp_mis, m, pmm_samp$ignore, 
+    where, pmm_samp$blocks, visitSequence = var_names,
+    pmm_samp$method, pmm_samp$nmis, data.init)
+for (h in visitSequence) {
+    for (j in blocks[[h]]) {
+        y <- data[, j]
+        ry <- r[, j]
+        wy <- where[, j]
+        data[(!ry) & wy, j] <- imp[[j]][(!ry)[wy], i]
+  }
+}
+univ <- !F && !is.passive("pmm") &&
+            !handles.format(paste0("mice.impute.", theMethod))
+mult <- !F && !is.passive("pmm") &&
+            handles.format(paste0("mice.impute.", theMethod))
+
+
+b <- pmm_samp$blocks[["c_ln_na_true"]]
+user <- pmm_samp$blots[["c_ln_na_true"]]
+theMethod <- pmm_samp$method["c_ln_na_true"]
+formula <- pmm_samp$formulas$c_ln_na_true
+yname <- j
+k <- 1
+calltype <- "formula"
+type <- pmm_samp$predictorMatrix["c_ln_na_true", ]
+ignore <- pmm_samp$ignore
+imp[[j]][, 1]
+```
+
+```{r}
+check.df <- function(x, y, ry) {
+  # if needed, writes the df warning message to the log
+  df <- sum(ry) - ncol(x) - 1
+  mess <- paste("df set to 1. # observed cases:", sum(ry), " # predictors:", ncol(x) + 1)
+  if (df < 1 && sum(ry) > 0) {
+    updateLog(out = mess, frame = 4)
+  }
+}
+
+lhs <- function(x) all.vars(update(x, . ~ 1))
+obtain.design <- function(data, formula = ~.) {
+  mf <- model.frame(formula, data = data, na.action = na.pass)
+  model.matrix(formula, data = mf)
+}
+j <- yname[1L]
+
+  if (calltype == "type") {
+    vars <- colnames(data)[type != 0]
+    pred <- setdiff(vars, j)
+    if (length(pred) > 0L) {
+      formula <- reformulate(pred, response = j)
+      formula <- update(formula, ". ~ . ")
+    } else {
+      formula <- as.formula(paste0(j, " ~ 1"))
+    }
+  }
+
+  if (calltype == "formula") {
+    # move terms other than j from lhs to rhs
+    ymove <- setdiff(lhs(formula), j)
+    formula <- update(formula, paste(j, " ~ . "))
+    if (length(ymove) > 0L) {
+      formula <- update(formula, paste("~ . + ", paste(ymove, collapse = "+")))
+    }
+  }
+
+  # get the model matrix
+  x <- obtain.design(data, formula)
+
+  # expand type vector to model matrix, remove intercept
+  if (calltype == "type") {
+    type <- type[labels(terms(formula))][attr(x, "assign")]
+    x <- x[, -1L, drop = FALSE]
+    names(type) <- colnames(x)
+  }
+  if (calltype == "formula") {
+    x <- x[, -1L, drop = FALSE]
+    type <- rep(1L, length = ncol(x))
+    names(type) <- colnames(x)
+  }
+
+  # define y, ry and wy
+  y <- data[, j]
+  ry <- complete.cases(x, y) & r[, j] & !ignore
+  wy <- complete.cases(x) & where[, j]
+
+  # nothing to impute
+  if (all(!wy)) {
+    return(numeric(0))
+  }
+
+  cc <- wy[where[, j]]
+  if (k == 1L) check.df(x, y, ry)
+
+  # remove linear dependencies
+  keep <- remove.lindep(x, y, ry)
+  x <- x[, keep, drop = FALSE]
+  type <- type[keep]
+  if (ncol(x) != length(type)) {
+    stop("Internal error: length(type) != number of predictors")
+  }
+
+  # here we go
+  f <- paste("mice.impute", method, sep = ".")
+  imputes <- data[wy, j]
+  imputes[!cc] <- NA
+
+  args <- c(list(y = y, ry = ry, x = x, wy = wy, type = type), user)
+  
+  if (is.null(wy)) {
+    wy <- !ry
+  }
+
+  # Reformulate the imputation problem such that
+  # 1. the imputation model disregards records with excluded y-values
+  # 2. the donor set does not contain excluded y-values
+
+  # Keep sparse categories out of the imputation model
+  if (is.factor(y)) {
+    active <- !ry | y %in% (levels(y)[table(y) >= trim])
+    y <- y[active]
+    ry <- ry[active]
+    x <- x[active, , drop = FALSE]
+    wy <- wy[active]
+  }
+  # Keep excluded values out of the imputation model
+  if (!is.null(exclude)) {
+    active <- !ry | !y %in% exclude
+    y <- y[active]
+    ry <- ry[active]
+    x <- x[active, , drop = FALSE]
+    wy <- wy[active]
+  }
+
+  x <- cbind(1, as.matrix(x))
+
+  # quantify categories for factors
+  ynum <- y
+  if (is.factor(y)) {
+    if (quantify) {
+      ynum <- quantify(y, ry, x)
+    } else {
+      ynum <- as.integer(y)
+    }
+  }
+  
+  imputes[cc] <- do.call(f, args = args)
+  imputes
+
+  p <- estimice(x[ry, , drop = FALSE], y[ry], ...)
+  sigma.star <- sqrt(sum((p$r)^2) / rchisq(1, p$df))
+  beta.star <- p$c + (t(chol(sym(p$v))) %*% rnorm(ncol(x))) * sigma.star
+  parm <- list(p$c, beta.star, sigma.star, p$ls.meth)
+  names(parm) <- c("coef", "beta", "sigma", "estimation")
+  if (any(is.na(parm$coef)) & rank.adjust) {
+    parm$coef[is.na(parm$coef)] <- 0
+    parm$beta[is.na(parm$beta)] <- 0
+  }
+  parm
+
+
+
+
+
+
+
+is.passive <- function(string) {
+  "~" == substring(string, 1, 1)
+}
+
+handles.format <- function(fn) {
+  # determine whether function fn handles the `format` argument
+  f <- get(fn)
+  handles.arg(f, "format")
+}
+handles.arg <- function(f, a = "data") {
+  # determine whether function f handles argument a
+  if (!is.function(f)) {
+    return(FALSE)
+  }
+  a %in% names(formals(f))
+}
+
+initialize.imp <- function(data, m, ignore, where, blocks, visitSequence,
+                           method, nmis, data.init) {
+  imp <- vector("list", ncol(data))
+  names(imp) <- names(data)
+  r <- !is.na(data)
+  for (h in visitSequence) {
+    for (j in blocks[[h]]) {
+      y <- data[, j]
+      ry <- r[, j] & !ignore
+      wy <- where[, j]
+      imp[[j]] <- as.data.frame(matrix(NA, nrow = sum(wy), ncol = m))
+      dimnames(imp[[j]]) <- list(row.names(data)[wy], 1:m)
+      if (method[h] != "") {
+        for (i in seq_len(m)) {
+          if (nmis[j] < nrow(data) && is.null(data.init)) {
+            imp[[j]][, i] <- mice.impute.sample(y, ry, wy = wy)
+          } else if (!is.null(data.init)) {
+            imp[[j]][, i] <- data.init[wy, j]
+          } else {
+            if (is.factor(y)) {
+              imp[[j]][, i] <- sample(levels(y), nrow(data))
+            } else {
+              imp[[j]][, i] <- rnorm(nrow(data))
+            }
+          }
+        }
+      }
+    }
+  }
+  imp
+}
+
+
+
+
+mice.impute.sample <- function(y, ry, x = NULL, wy = NULL, ...) {
+  if (is.null(wy)) {
+    wy <- !ry
+  }
+  yry <- y[ry]
+  if (length(yry) < 1) {
+    return(rnorm(sum(wy)))
+  }
+  if (length(yry) == 1) yry <- rep(yry, 2)
+  sample(yry, size = sum(wy), replace = TRUE)
+}
+
+
+```
+
+```{r}
+sampler.univ <- function(data, r, where, type, formula, method, yname, k,
+                         calltype = "type", user, ignore, ...) {
+  j <- yname[1L]
+
+  if (calltype == "type") {
+    vars <- colnames(data)[type != 0]
+    pred <- setdiff(vars, j)
+    if (length(pred) > 0L) {
+      formula <- reformulate(pred, response = j)
+      formula <- update(formula, ". ~ . ")
+    } else {
+      formula <- as.formula(paste0(j, " ~ 1"))
+    }
+  }
+
+  if (calltype == "formula") {
+    # move terms other than j from lhs to rhs
+    ymove <- setdiff(lhs(formula), j)
+    formula <- update(formula, paste(j, " ~ . "))
+    if (length(ymove) > 0L) {
+      formula <- update(formula, paste("~ . + ", paste(ymove, collapse = "+")))
+    }
+  }
+
+  # get the model matrix
+  x <- obtain.design(data, formula)
+
+  # expand type vector to model matrix, remove intercept
+  if (calltype == "type") {
+    type <- type[labels(terms(formula))][attr(x, "assign")]
+    x <- x[, -1L, drop = FALSE]
+    names(type) <- colnames(x)
+  }
+  if (calltype == "formula") {
+    x <- x[, -1L, drop = FALSE]
+    type <- rep(1L, length = ncol(x))
+    names(type) <- colnames(x)
+  }
+
+  # define y, ry and wy
+  y <- data[, j]
+  ry <- complete.cases(x, y) & r[, j] & !ignore
+  wy <- complete.cases(x) & where[, j]
+
+  # nothing to impute
+  if (all(!wy)) {
+    return(numeric(0))
+  }
+
+  cc <- wy[where[, j]]
+  if (k == 1L) check.df(x, y, ry)
+
+  # remove linear dependencies
+  keep <- remove.lindep(x, y, ry, ...)
+  x <- x[, keep, drop = FALSE]
+  type <- type[keep]
+  if (ncol(x) != length(type)) {
+    stop("Internal error: length(type) != number of predictors")
+  }
+
+  # here we go
+  f <- paste("mice.impute", method, sep = ".")
+  imputes <- data[wy, j]
+  imputes[!cc] <- NA
+
+  args <- c(list(y = y, ry = ry, x = x, wy = wy, type = type), user, list(...))
+  imputes[cc] <- do.call(f, args = args)
+  imputes
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+
+```
+
+# HCHSsim
+```{R, fig.height = 5, fig.width = 10}
+files <- paste0('./HCHS/SampleData_', str_pad(1:1000, nchar(1000), pad = 0), ".RData")
+
+hchs_rmse <- hchs_bias_m1 <- hchs_bias_m2 <- hchs_var_m1 <- hchs_var_m2 <- NULL
+for (i in 1:1000){
+  load(files[i])
+  samp <- as.data.frame(samp) %>%
+    select(-contains("bio2")) %>%
+    select(-contains("avg")) %>%
+    select(-c(hhid, dat.num, subid, v.num, 
+              age.strat, hisp.strat)) %>%
+    select(-contains("W.")) %>%
+    select(-c(ln_na_true, ln_k_true, ln_kcal_true, 
+              ln_protein_true, ln_na_bio1, ln_k_bio1,
+              ln_kcal_bio1, ln_protein_bio1, 
+              age, bmi, sex))
+  samp$bkg <- as.factor(samp$bkg)
+    
+  #bio1 with ME
+  #true without ME
+  col_ind <- which(names(samp) == "c_ln_na_true"):which(names(samp) == "c_ln_protein_true")
+  result_list <- innerloop(samp, 
+                           iter = 5, 
+                           targetcols = col_ind, 
+                           type = "HCHS")
+  
+  rmse <- as.data.frame(result_list[[1]])
+  rmse$mitype <- c("pmm", "rf", "cart", "mf", 
+                   "mixgb_pmm", "mixgb_nopmm", 
+                   "rf+mixgb", "mf+mixgb")
+  names(rmse) <- c("rmse", "mitype")
+  
+  bias_m1 <- result_list[[2]] %>%
+    pivot_longer(cols = -c(mitype)) %>%
+    rename(bias = value)
+  bias_m2 <- result_list[[3]] %>%
+    pivot_longer(cols = -c(mitype)) %>%
+    rename(bias = value)
+  var_m1 <- result_list[[4]] %>%
+    pivot_longer(cols = -c(mitype)) %>%
+    rename(bias = value)
+  var_m2 <- result_list[[5]] %>%
+    pivot_longer(cols = -c(mitype)) %>%
+    rename(bias = value)
+  
+  hchs_rmse <- rbind(hchs_rmse, rmse)
+  hchs_bias_m1 <- rbind(hchs_bias_m1, bias_m1)
+  hchs_bias_m2 <- rbind(hchs_bias_m2, bias_m2)
+  hchs_var_m1 <- rbind(hchs_var_m1, var_m1)
+  hchs_var_m2 <- rbind(hchs_var_m2, var_m2)
+}
+```
+
+
+```{r}
+sd <- seq(2, 0, by = -0.25)
+for (i in sd){
+  set.seed(10086)
+true_data <- dataSim(mu, sigma, ncov = 10, sd = 0.5)
+col_ind <- 3:12
+rmse_vec <- NULL
+j <- 10
+for (k in 12:3){
+  samp_mis <- subsel(true_data, rate = 0.2, 
+                   targetcols = col_ind)
+  pmm_obj <- mice(samp_mis, m = 5, print = F, 
+                  remove.collinear = F)
+  pmm_data <- complete(pmm_obj, "long")[, -c(1, 2)]
+  new_samp <- as.data.frame(true_data[, col_ind[1]]) %>% 
+      slice(rep(row_number(), 5))
+
+# 4 Missing Covariates, Testing Only One
+  rmse_vec <- c(rmse_vec, 
+                sqrt(colMeans((as.matrix(pmm_data[, col_ind[1]]) - as.matrix(new_samp))^2)))
+  true_data[, k] <- NULL
+  col_ind <- col_ind[-j]
+  j <- j - 1 
+}
+names(rmse_vec) <- 10:1
+rmse_mat <- rbind(rmse_mat, rmse_vec)
+}
+```
+
+```{r}
+rmse_mat <- NULL
+
+rmse_mat <- as.data.frame(rmse_mat)
+rmse_mat_longer <- rmse_mat %>% 
+  pivot_longer(everything())
+rmse_mat_longer$sd <- rep(rep(seq(2, 0, by = -0.25), 2), each = 10)
+rmse_mat_longer$type <- rep(c("pmm", "cart"), each = 10 * 9)
+ggplot(rmse_mat_longer[rmse_mat_longer$type == "pmm", ]) + 
+  geom_line(aes(x = as.numeric(name), y = value)) +
+  facet_wrap(~sd, scales = "free") + 
+  ylab("rmse") + 
+  xlab("No. Missing Variable")
+```
+
+```{r}
+set.seed(10086)
+true_data <- dataSim(mu, sigma, ncov = 10, sd = 0.5)
+samp_mis <- subsel(true_data, rate = 0.2, 
+                   targetcols = col_ind)
+xobs <- samp_mis[samp_mis$R == 1, -col_ind]
+xmis <- samp_mis[samp_mis$R == 0, -col_ind]
+yobs <- samp_mis$x1[samp_mis$R == 1]
+ymis <- true_data$x1[samp_mis$R == 0]
+
+fit <- rpart::rpart(yobs ~ ., data = cbind(yobs, xobs), 
+                        method = "anova", control = rpart::rpart.control(minbucket = 5, 
+                                                                         cp = 1e-04))
+leafnr <- floor(as.numeric(row.names(fit$frame[fit$where, ])))
+fit$frame$yval <- as.numeric(row.names(fit$frame))
+nodes <- predict(object = fit, newdata = xmis)
+donor <- lapply(nodes, function(s) yobs[leafnr == s])
+impute1 <- vapply(seq_along(donor), function(s) median(donor[[s]]), numeric(1))
+impute2 <- vapply(seq_along(donor), function(s) sample(donor[[s]], 1), numeric(1))
+impute3 <- vapply(seq_along(donor), function(s) mean(donor[[s]]), numeric(1))
+sqrt(mean((impute1 - ymis)^2))
+sqrt(mean((impute2 - ymis)^2))
+sqrt(mean((impute3 - ymis)^2))
+length(unique(impute3))
+```
+
+
+```{r}
+ntree <- max(1, 10)
+nmis <- sum(4000)
+set.seed(10086)
+true_data <- dataSim(mu, sigma, ncov = 10, sd = 0.5)
+samp_mis <- subsel(true_data, rate = 0.2, 
+                   targetcols = col_ind)
+xobs <- samp_mis[samp_mis$R == 1, -col_ind]
+xmis <- samp_mis[samp_mis$R == 0, -col_ind]
+yobs <- samp_mis$x1[samp_mis$R == 1]
+ymis <- true_data$x1[samp_mis$R == 0]
+fit <- ranger::ranger(x = xobs, y = yobs, num.trees = ntree)
+nodes <- predict(
+    object = fit, data = rbind(xobs, xmis),
+    type = "terminalNodes", predict.all = TRUE
+  )
+nodes <- ranger::predictions(nodes)
+nodes_obs <- nodes[1:nrow(xobs), , drop = FALSE]
+nodes_mis <- nodes[(nrow(xobs) + 1):nrow(nodes), , drop = FALSE]
+
+select_donors <- function(i) {
+    # Function to extract all eligible donors for each missing value
+  donors <- split(yobs, nodes_obs[, i])
+  donors[as.character(nodes_mis[, i])]
+}
+
+donors <- sapply(seq_len(ntree), FUN = select_donors)
+
+impute1 <- apply(donors, MARGIN = 1, FUN = function(s) sample(unlist(s), 1))
+impute2 <- apply(donors, MARGIN = 1, FUN = function(s) mean(unlist(s), 1))
+impute3 <- apply(donors, MARGIN = 1, FUN = function(s) median(unlist(s), 1))
+
+sqrt(mean((impute1 - ymis)^2))
+sqrt(mean((impute2 - ymis)^2))
+sqrt(mean((impute3 - ymis)^2))
+
+imp1 <- mice(samp_mis, m = 5, meth = "rf", 
+             remove.colinear = F,
+             ntree = 100, print = F)
+mean(colMeans((as.matrix(complete(imp1, "long")[, -c(1, 2)][, col_ind]) -
+                             as.matrix(new_true))^2))
+
+imp2 <- mice(samp_mis, m = 5, meth = "cart", print = F, remove.colinear = F)
+mean(colMeans((as.matrix(complete(imp2, "long")[, -c(1, 2)][, col_ind]) -
+                             as.matrix(new_true))^2))
+```
+
+
+
+```{r, fig.height = 10, fig.width = 25}
+ggplot(hchs_bias_m1) + 
+  geom_boxplot(aes(x = mitype, y = bias)) + 
+  facet_wrap(~name, scales = "free") + 
+  theme_minimal() + 
+  geom_abline(intercept = 0, slope = 0, colour = "red")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+prob <- c(0.1953, 0.1300, 0.1065, 0.10 ,0.10, 0.0984, 0.1421, 0.1277) /
+    sum(c(0.1953, 0.1300, 0.1065, 0.10 ,0.10, 0.0984, 0.1421, 0.1277))
+mu <- sim_mean(10)
+sigma <- sim_variance(10)
+
+save(prob, mu, sigma, file = "simpopu_info.RData")
+```
+
+```{r, fig.height=10, fig.width=10}
+xobs <- data_mis[data_mis$R == 1, -col_ind]
+xmis <- data_mis[data_mis$R == 0, -col_ind]
+yobs <- data_mis$x1[data_mis$R == 1]
+ymis <- true_data$x1[data_mis$R == 0]
+
+fit <- rpart::rpart(yobs ~ ., data = cbind(yobs, xobs), 
+                        method = "anova", control = rpart::rpart.control(minbucket = minbucket, 
+                                                                         cp = cp))
+leafnr <- floor(as.numeric(row.names(fit$frame[fit$where, ])))
+fit$frame$yval <- as.numeric(row.names(fit$frame))
+nodes <- predict(object = fit, newdata = xmis)
+donor <- lapply(nodes, function(s) yobs[leafnr == s])
+impute <- vapply(seq_along(donor), function(s) sample(donor[[s]], 
+                                                          1), numeric(1))
+sqrt(mean((impute - ymis)^2))
+
+innerloop(true_data)
+```
+
+
+
+```{r}
+load("simpopu_info.RData")
+
+sd <- seq(0, 1.5, by = 0.05)
+
+plan(multisession, workers = 4)
+
+RMSE <- matrix(nrow = length(sd), ncol = 8)
+
+for (i in 1:length(sd)){
+  true_data <- dataSim(mu, sigma, ncov = 10, sd = sd[i])
+  RMSEtemp <- future_replicate(n = 2, innerloop(true_data))
+  RMSE[i, ] <- rowMeans(RMSEtemp)
+}
+
+
+save(RMSE, file = "RMSE.RData")
+```
+
+```{r}
+load("RMSE.RData")
+RMSE_iter5 <- sqrt(RMSE)
+RMSE_iter5 <- round(RMSE_iter5, 3)
+colnames(RMSE_iter5) <- c("pmm", "rf", "cart", "mf", "mixgb_pmm", "mixgb_nopmm", "rf+mixgb", "mf+mixgb")
+RMSE_iter5 <- as.data.frame(RMSE_iter5)
+sd <- seq(0, 1.5, by = 0.05)
+
+RMSE_iter5 <- pivot_longer(RMSE_iter5, everything(), names_to = "mitype") %>% rename(RMSE = value)
+RMSE_iter5$SD <- rep(sd, each = 8)
+
+#ggplot(RMSE_iter5) + geom_line(aes(x = SD, y = RMSE, colour = mitype)) + theme_minimal()
+
+load("RMSE_iter10.RData")
+RMSE_iter10 <- sqrt(RMSE)
+RMSE_iter10 <- round(RMSE_iter10, 3)
+colnames(RMSE_iter10) <- c("pmm", "rf", "cart", "mf", "mixgb_pmm", "mixgb_nopmm", "rf+mixgb", "mf+mixgb")
+RMSE_iter10 <- as.data.frame(RMSE_iter10)
+sd <- seq(0, 1.5, by = 0.05)
+
+RMSE_iter10 <- pivot_longer(RMSE_iter10, everything(), names_to = "mitype") %>% rename(RMSE = value)
+RMSE_iter10$SD <- rep(sd, each = 8)
+
+load("RMSE_iter20.RData")
+RMSE_iter20 <- sqrt(RMSE)
+RMSE_iter20 <- round(RMSE_iter20, 3)
+colnames(RMSE_iter20) <- c("pmm", "rf", "cart", "mf", "mixgb_pmm", "mixgb_nopmm", "rf+mixgb", "mf+mixgb")
+RMSE_iter20 <- as.data.frame(RMSE_iter20)
+sd <- seq(0, 1.5, by = 0.05)
+
+RMSE_iter20 <- pivot_longer(RMSE_iter20, everything(), names_to = "mitype") %>% rename(RMSE = value)
+RMSE_iter20$SD <- rep(sd, each = 8)
+
+#ggplot(RMSE_iter10) + geom_line(aes(x = SD, y = RMSE, colour = mitype)) + theme_minimal()
+
+mat <- rbind(RMSE_iter5, RMSE_iter10, RMSE_iter20)
+mat$iter <- rep(c(5, 10, 20), each = 248)
+
+ggplot(mat) + geom_line(aes(x = SD, y = RMSE, colour = as.factor(iter))) + theme_minimal() + facet_wrap(~mitype)
+```
+
+```{r}
+load("missRate.RData")
+colnames(rmse) <- c("pmm", "rf", "cart", "mf", "mixgb_pmm", "mixgb_nopmm", "rf+mixgb", "mf+mixgb")
+rmse <- as.data.frame(sqrt(rmse))
+rmse <- pivot_longer(rmse, everything(), names_to = "mitype") %>% rename(RMSE = value)
+rmse$missrate <- rep(seq(0.8, 0.1, by = -0.1), each = 8)
+
+ggplot(rmse) + geom_line(aes(x = missrate, y = RMSE, colour = mitype)) + theme_minimal()
+```
+
+```{r}
+sd <- seq(0, 1.5, by = 0.05)
+load("RMSE_tpp.RData")
+
+colnames(RMSE) <- c("pmm", "rf", "cart", "mf", "mixgb_pmm", "mixgb_nopmm", "rf+mixgb", "mf+mixgb")
+RMSE <- as.data.frame(sqrt(RMSE))
+RMSE <- pivot_longer(RMSE, everything(), names_to = "mitype") %>% rename(RMSE = value)
+RMSE$SD <- rep(sd, each = 8)
+
+ggplot(RMSE) + geom_line(aes(x = SD, y = RMSE, colour = mitype)) + theme_minimal()
+```
+
+
+
+
+
