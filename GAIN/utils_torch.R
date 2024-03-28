@@ -121,11 +121,11 @@ new_batch <- function(norm_data, data_mask, R, misRow, batch_size, device = "cpu
   #mask_curr_batch <- data_mask$torch.data[norm_curr_batch$index]
   #R_curr_batch <- R[norm_curr_batch$index]
   
-  norm_curr_batch <- norm_data[batch_idx]
+  norm_curr_batch <- norm_data[batch_idx, ]
   mask_curr_batch <- data_mask[batch_idx]
   R_curr_batch <- R[batch_idx]
   
-  return (list(norm_curr_batch$data$to(device = device), mask_curr_batch$data$to(device = device),
+  return (list(norm_curr_batch, mask_curr_batch$data$to(device = device),
                R_curr_batch$to(device = device)))
 }
 

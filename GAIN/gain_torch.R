@@ -24,18 +24,21 @@ gain <- function(data, device = "cpu", batch_size = 128, hint_rate = 0.9,
   C <- t(replicate(batch_size, as.numeric(misCol)))
   
   norm_result <- normalize(data, numCol)
+  phase2vals <- norm_result$norm_data[which(misRow == F), which(misCol == 0)]
+  #print(phase2vals)
+  
   norm_data <- norm_result$norm_data
   norm_parameters <- norm_result$norm_parameters
   
-  norm_data[is.na(norm_data)] <- 0
+  #norm_data[is.na(norm_data)] <- 0
   
   data_mask <- 1 - is.na(data)
   norm_data <- as.matrix(norm_data)
   
-  norm_data <- torch::torch_tensor(norm_data, device = device)
+  #norm_data <- torch::torch_tensor(norm_data, device = device)
   data_mask <- torch::torch_tensor(data_mask, device = device)
   
-  norm_data <- torch_data(norm_data)
+  #norm_data <- torch_data(norm_data)
   data_mask <- torch_data(data_mask)
   
   GAIN_Generator <- torch::nn_module(
@@ -86,7 +89,7 @@ gain <- function(data, device = "cpu", batch_size = 128, hint_rate = 0.9,
   D_layer <- GAIN_Discriminator(nCol, H_dim)$to(device = device)
   
   G_solver <- torch::optim_adam(G_layer$parameters)
-  D_solver <- torch::optim_adam(D_layer$parameters, lr = 1e-6)
+  D_solver <- torch::optim_adam(D_layer$parameters)
   
   generator <- function(X, R){
     input <- torch_cat(list(X, R), dim = 2)
@@ -129,19 +132,25 @@ gain <- function(data, device = "cpu", batch_size = 128, hint_rate = 0.9,
   
   for (i in 1:n){
     ind_batch <- new_batch(norm_data, data_mask, R, misRow, batch_size, device)
-    X_mb <- ind_batch[[1]]$to(device = device)
+    X_mb <- ind_batch[[1]]
     M_mb <- ind_batch[[2]]$to(device = device)
     R_mb <- ind_batch[[3]]$to(device = device)
     
-    Z_mb <- ((-0.01) * torch::torch_rand(c(batch_size, nCol)) + 0.01)$to(device = device)
+    X_mb[is.na(X_mb[, which(misCol == 0)]), 
+         which(misCol == 0)] <- sample(phase2vals, sum(is.na(X_mb[, which(misCol == 0)])), 
+                                                              replace = T)
+
+    X_mb <- torch_tensor(X_mb, device = device)
+    
+    #Z_mb <- ((-0.01) * torch::torch_rand(c(batch_size, nCol)) + 0.01)$to(device = device)
     H_mb <- 1 * (matrix(runif(batch_size * 1, 0, 1), nrow = batch_size) < hint_rate)
     H_mb <- torch_tensor(H_mb, device = device)
     
-    
+  
     #H_mb <- M_mb * H_mb
     H_mb <- R_mb * H_mb
-    X_mb <- M_mb * X_mb + (1 - M_mb) * (Z_mb)
-    X_mb <- X_mb$to(device = device)
+    #X_mb <- M_mb * X_mb + (1 - M_mb) * (Z_mb)
+    #X_mb <- X_mb$to(device = device)
     
     d_loss <- D_loss(X_mb, M_mb, H_mb, R_mb)
     D_loss_mat[i, ] <- c(i, as.numeric(d_loss$detach()$cpu()))
@@ -151,7 +160,7 @@ gain <- function(data, device = "cpu", batch_size = 128, hint_rate = 0.9,
     D_solver$step()
     
     g_loss <- G_loss(X_mb, M_mb, H_mb, R_mb)
-    G_loss_mat[i, ] <- c(i, as.numeric(d_loss$detach()$cpu()))
+    G_loss_mat[i, ] <- c(i, as.numeric(g_loss$detach()$cpu()))
     
     G_solver$zero_grad()
     g_loss$backward()
@@ -160,14 +169,15 @@ gain <- function(data, device = "cpu", batch_size = 128, hint_rate = 0.9,
     pb$tick(tokens = list(what = "GAIN   "))
     Sys.sleep(1 / 10000)
   }
+  norm_data[misRow, which(misCol == 0)] <- sample(phase2vals, length(which(misRow == T)), replace = T)
+  norm_data <- torch_tensor(norm_data, device = device)
+  #Z <- ((-0.01) * torch::torch_rand(c(nRow, nCol)) + 0.01)$to(device = device)
+  #X <- data_mask$torch.data * norm_data + (1 - data_mask$torch.data) * Z
+  #X <- X$to(device = device)
   
-  Z <- ((-0.01) * torch::torch_rand(c(nRow, nCol)) + 0.01)$to(device = device)
-  X <- data_mask$torch.data * norm_data$torch.data + (1 - data_mask$torch.data) * Z
-  X <- X$to(device = device)
+  G_sample <- generator(norm_data, R)
   
-  G_sample <- generator(X, R)
-  
-  imputed_data <- data_mask$torch.data * X + (1 - data_mask$torch.data) * G_sample
+  imputed_data <- data_mask$torch.data * norm_data + (1 - data_mask$torch.data) * G_sample
   
   imputed_data <- imputed_data$detach()$cpu()
   

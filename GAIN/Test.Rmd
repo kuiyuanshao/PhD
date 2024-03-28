@@ -37,42 +37,21 @@ data <- simtwophasepaper()
 id <- sample(1:10000, 8000)
 data_mis <- data
 data_mis$X[id] <- NA
-write.csv(data_mis, "data_mis.csv")
-
 ```
 
 ```{r}
-library(ggplot2)
-imp <- read.csv("imputation_5000.csv", sep = "\t")[-1]
+source("utils_torch.R")
+source("gain_torch.R")
+imp <- gain(data_mis, n = 50000, alpha = 100)
 
-ggplot(imp) + geom_point(aes(x = X, y = Y))
-lm(Y ~ X + Z, imp)
+lm(Y ~ X + Z, imp[[1]])
 
-cluster <- read.csv("data_mis_cluster.csv", sep = '\t')[-1]
+ggplot(imp[[2]]) + geom_point(aes(x = X, y = Y))
 
-imp_cond <- imp[, c("Z", "X_tilde_labels", "Y_labels")]
-imp_cond <- apply(imp_cond, 1, paste, collapse = "_")
-cond <- cluster[is.na(cluster$X), c("Z", "X_tilde_labels", "Y_labels")]
-cond <- apply(cond, 1, paste, collapse = "_")
-
-index_list <- list()
-ind <- which(is.na(cluster$X) == T)
-for (i in 1:length(cond)){
-  index <- which(imp_cond == cond[i])
-  if (length(index) > 0)
-    cluster$X[ind[i]] <-  mean(sample(imp$X[index], 1, replace = T))
-}
-lm(Y ~ X + Z, cluster)
-ggplot(cluster) + geom_point(aes(x = X, y = Y))
-
-which(round(imp$X_tilde, 2) == 0.68)
-which(round(imp$Y, 2) == 5.01)
-
-cluster
-
-
-
+ggplot(imp[[3]]) + geom_line(aes(x = epochs, y = loss, colour = Type)) 
 ```
+
+
 
 
 ```{r}
