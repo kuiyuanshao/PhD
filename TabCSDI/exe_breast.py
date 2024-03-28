@@ -7,13 +7,13 @@ import os
 
 from src.main_model_table import TabCSDI
 from src.utils_table import train, evaluate
-from dataset_me_onehot import get_dataloader
+from dataset_breast import get_dataloader
 
 parser = argparse.ArgumentParser(description="TabCSDI")
-parser.add_argument("--config", type=str, default="data.yaml")
+parser.add_argument("--config", type=str, default="breast.yaml")
 parser.add_argument("--device", default="cpu", help="Device")
 parser.add_argument("--seed", type=int, default=1)
-parser.add_argument("--testmissingratio", type=float, default=0.8)
+parser.add_argument("--testmissingratio", type=float, default=0.2)
 parser.add_argument("--nfold", type=int, default=5, help="for 5-fold test")
 parser.add_argument("--unconditional", action="store_true", default=0)
 parser.add_argument("--modelfolder", type=str, default="")
@@ -35,13 +35,12 @@ print(json.dumps(config, indent=4))
 
 # Create folder
 current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-foldername = "./save/data_fold" + str(args.nfold) + "_" + current_time + "/"
+foldername = "./save/breast_fold" + str(args.nfold) + "_" + current_time + "/"
 print("model folder:", foldername)
 os.makedirs(foldername, exist_ok=True)
 with open(foldername + "config.json", "w") as f:
     json.dump(config, f, indent=4)
 
-    
 # Every loader contains "observed_data", "observed_mask", "gt_mask", "timepoints"
 train_loader, valid_loader, test_loader = get_dataloader(
     seed=args.seed,

@@ -7,8 +7,8 @@ import pandas as pd
 from torch.utils.data import DataLoader, Dataset
 
 
-def process_func(path: str, aug_rate=1, missing_ratio=0.8):
-    data = pd.read_csv(path, header=None)
+def process_func(path: str, aug_rate=1, missing_ratio=0.1):
+    data = pd.read_csv(path, header=None).iloc[:, 1:]
     data.replace("?", np.nan, inplace=True)
     data_aug = pd.concat([data] * aug_rate)
 
@@ -18,12 +18,11 @@ def process_func(path: str, aug_rate=1, missing_ratio=0.8):
     masks = observed_masks.copy()
     # for each column, mask {missing_ratio} % of observed values.
     for col in range(observed_values.shape[1]):  # col #
-        if col == 2:
-            obs_indices = np.where(masks[:, col])[0]
-            miss_indices = np.random.choice(
-                obs_indices, (int)(len(obs_indices) * missing_ratio), replace=False
-            )
-            masks[miss_indices, col] = False
+        obs_indices = np.where(masks[:, col])[0]
+        miss_indices = np.random.choice(
+            obs_indices, (int)(len(obs_indices) * missing_ratio), replace=False
+        )
+        masks[miss_indices, col] = False
     # gt_mask: 0 for missing elements and manully maksed elements
     gt_masks = masks.reshape(observed_masks.shape)
 
@@ -37,17 +36,17 @@ def process_func(path: str, aug_rate=1, missing_ratio=0.8):
 class tabular_dataset(Dataset):
     # eval_length should be equal to attributes number.
     def __init__(
-        self, eval_length=4, use_index_list=None, aug_rate=1, missing_ratio=0.8, seed=0
+        self, eval_length=10, use_index_list=None, aug_rate=1, missing_ratio=0.1, seed=0
     ):
         self.eval_length = eval_length
         np.random.seed(seed)
 
-        dataset_path = "./data_me_onehot/data.csv"
+        dataset_path = "./data_breast/breast-cancer-wisconsin.data"
         processed_data_path = (
-            f"./data_me_onehot/missing_ratio-{missing_ratio}_seed-{seed}.pk"
+            f"./data_breast/missing_ratio-{missing_ratio}_seed-{seed}.pk"
         )
         processed_data_path_norm = (
-            f"./data_me_onehot/missing_ratio-{missing_ratio}_seed-{seed}_max-min_norm.pk"
+            f"./data_breast/missing_ratio-{missing_ratio}_seed-{seed}_max-min_norm.pk"
         )
 
         if not os.path.isfile(processed_data_path):
@@ -87,7 +86,7 @@ class tabular_dataset(Dataset):
         return len(self.use_index_list)
 
 
-def get_dataloader(seed=1, nfold=5, batch_size=16, missing_ratio=0.8):
+def get_dataloader(seed=1, nfold=5, batch_size=16, missing_ratio=0.1):
     dataset = tabular_dataset(missing_ratio=missing_ratio, seed=seed)
     print(f"Dataset size:{len(dataset)} entries")
 
@@ -110,7 +109,7 @@ def get_dataloader(seed=1, nfold=5, batch_size=16, missing_ratio=0.8):
 
     # Here we perform max-min normalization.
     processed_data_path_norm = (
-        f"./data_me_onehot/missing_ratio-{missing_ratio}_seed-{seed}_max-min_norm.pk"
+        f"./data_breast/missing_ratio-{missing_ratio}_seed-{seed}_max-min_norm.pk"
     )
     if not os.path.isfile(processed_data_path_norm):
         print(
