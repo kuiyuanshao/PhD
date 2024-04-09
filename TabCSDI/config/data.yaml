@@ -1,7 +1,7 @@
 #type: args
 
 train:
-  epochs: 250
+  epochs: 2
   batch_size: 16 
   lr: 0.0005
 

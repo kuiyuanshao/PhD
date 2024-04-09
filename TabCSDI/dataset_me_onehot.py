@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader, Dataset
 
 
 def process_func(path: str, aug_rate=1, missing_ratio=0.8):
-    data = pd.read_csv(path, header=None)
+    data = pd.read_csv(path)
     data.replace("?", np.nan, inplace=True)
     data_aug = pd.concat([data] * aug_rate)
 

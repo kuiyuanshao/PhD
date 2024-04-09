@@ -4,6 +4,9 @@ import datetime
 import json
 import yaml
 import os
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
 
 from src.main_model_table import TabCSDI
 from src.utils_table import train, evaluate
@@ -11,7 +14,7 @@ from dataset_me_onehot import get_dataloader
 
 parser = argparse.ArgumentParser(description="TabCSDI")
 parser.add_argument("--config", type=str, default="data.yaml")
-parser.add_argument("--device", default="cpu", help="Device")
+parser.add_argument("--device", default="cuda", help="Device")
 parser.add_argument("--seed", type=int, default=1)
 parser.add_argument("--testmissingratio", type=float, default=0.8)
 parser.add_argument("--nfold", type=int, default=5, help="for 5-fold test")
@@ -61,6 +64,12 @@ if args.modelfolder == "":
         foldername=foldername,
     )
 else:
-    model.load_state_dict(torch.load("./save/" + args.modelfolder + "/model.pth"))
+    model.load_state_dict(torch.load("./save/" + "data_fold5_20240403_141215" + "/model.pth"))
 print("---------------Start testing---------------")
-evaluate(model, test_loader, nsample=args.nsample, scaler=1, foldername=foldername)
+output = []
+with tqdm(test_loader, mininterval=5.0, maxinterval=50.0) as it:
+    for batch_no, test_batch in enumerate(it, start=1):
+        output.append(model.evaluate(test_batch, 10)[0].detach().cpu().numpy())
+        
+output = np.concatenate(np.concatenate(np.concatenate(output, axis=0), axis=0), axis=0)
+pd.DataFrame(output).to_csv("generated_data.csv", sep = "\t")
