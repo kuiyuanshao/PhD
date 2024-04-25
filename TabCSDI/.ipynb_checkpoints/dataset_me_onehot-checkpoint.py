@@ -6,8 +6,7 @@ import numpy as np
 import pandas as pd
 from torch.utils.data import DataLoader, Dataset
 
-
-def process_func(path: str, aug_rate=1, missing_ratio=0.8):
+def process_func(path: str, aug_rate=1, missing_ratio=0.2):
     data = pd.read_csv(path)
     data.replace("?", np.nan, inplace=True)
     data_aug = pd.concat([data] * aug_rate)
@@ -37,12 +36,12 @@ def process_func(path: str, aug_rate=1, missing_ratio=0.8):
 class tabular_dataset(Dataset):
     # eval_length should be equal to attributes number.
     def __init__(
-        self, eval_length=4, use_index_list=None, aug_rate=1, missing_ratio=0.8, seed=0
+        self, eval_length=4, use_index_list=None, aug_rate=1, missing_ratio=0.2, seed=0
     ):
         self.eval_length = eval_length
         np.random.seed(seed)
 
-        dataset_path = "./data_me_onehot/data.csv"
+        dataset_path = "./data_me_onehot/data_mis.csv"
         processed_data_path = (
             f"./data_me_onehot/missing_ratio-{missing_ratio}_seed-{seed}.pk"
         )
@@ -87,20 +86,19 @@ class tabular_dataset(Dataset):
         return len(self.use_index_list)
 
 
-def get_dataloader(seed=1, nfold=5, batch_size=16, missing_ratio=0.8):
+def get_dataloader(seed=1, nfold=5, batch_size=16, missing_ratio=0.2):
     dataset = tabular_dataset(missing_ratio=missing_ratio, seed=seed)
     print(f"Dataset size:{len(dataset)} entries")
 
     indlist = np.arange(len(dataset))
 
     np.random.seed(seed + 1)
-    np.random.shuffle(indlist)
 
     tmp_ratio = 1 / nfold
     start = (int)((nfold - 1) * len(dataset) * tmp_ratio)
     end = (int)(nfold * len(dataset) * tmp_ratio)
 
-    test_index = indlist[start:end]
+    test_index = indlist
     remain_index = np.delete(indlist, np.arange(start, end))
 
     np.random.shuffle(remain_index)
@@ -141,17 +139,17 @@ def get_dataloader(seed=1, nfold=5, batch_size=16, missing_ratio=0.8):
 
     # Create datasets and corresponding data loaders objects.
     train_dataset = tabular_dataset(
-        use_index_list=train_index, missing_ratio=missing_ratio, seed=seed
+        use_index_list=indlist, missing_ratio=missing_ratio, seed=seed
     )
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=1)
 
     valid_dataset = tabular_dataset(
-        use_index_list=valid_index, missing_ratio=missing_ratio, seed=seed
+        use_index_list=indlist, missing_ratio=missing_ratio, seed=seed
     )
     valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=0)
 
     test_dataset = tabular_dataset(
-        use_index_list=test_index, missing_ratio=missing_ratio, seed=seed
+        use_index_list=indlist, missing_ratio=missing_ratio, seed=seed
     )
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=0)
 

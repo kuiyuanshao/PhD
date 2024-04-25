@@ -163,28 +163,27 @@ def evaluate(model, test_loader, nsample=100, scaler=1, mean_scaler=0, foldernam
                 )
 
             # Use folloing code for saving generated results.
-            # with open(
-            #     foldername + "/generated_outputs_nsample" + str(nsample) + ".pk", "wb"
-            # ) as f:
-            #     all_target = torch.cat(all_target, dim=0)
-            #     all_evalpoint = torch.cat(all_evalpoint, dim=0)
-            #     all_observed_point = torch.cat(all_observed_point, dim=0)
-            #     all_observed_time = torch.cat(all_observed_time, dim=0)
-            #     all_generated_samples = torch.cat(all_generated_samples, dim=0)
+            with open(
+                foldername + "/generated_outputs_nsample" + str(nsample) + ".pk", "wb"
+            ) as f:
+                all_target = torch.cat(all_target, dim=0)
+                all_evalpoint = torch.cat(all_evalpoint, dim=0)
+                all_observed_point = torch.cat(all_observed_point, dim=0)
+                all_observed_time = torch.cat(all_observed_time, dim=0)
+                all_generated_samples = torch.cat(all_generated_samples, dim=0)
 
-            #     pickle.dump(
-            #         [
-            #             # shape: [len(test_dataset), nsample, L, K]]
-            #             all_generated_samples,
-            #             all_target,
-            #             all_evalpoint,
-            #             all_observed_point,
-            #             all_observed_time,
-            #             scaler,
-            #             mean_scaler,
-            #         ],
-            #         f,
-            #     )
+                pickle.dump(
+                    [
+                        all_generated_samples,
+                        all_target,
+                        all_evalpoint,
+                        all_observed_point,
+                        all_observed_time,
+                        scaler,
+                        mean_scaler,
+                    ],
+                    f,
+                )
 
             with open(foldername + "/result_nsample" + str(nsample) + ".pk", "wb") as f:
                 pickle.dump(
@@ -423,6 +422,30 @@ def evaluate_onehot(
                     np.mean(err_total / err_total_eval_nums),
                     err_total / err_total_eval_nums,
                 )
+            # Use folloing code for saving generated results.
+            with open(
+               foldername + "/generated_outputs_nsample" + str(nsample) + ".pk", "wb"
+            ) as f:
+                all_target = torch.cat(all_target, dim=0)
+                all_evalpoint = torch.cat(all_evalpoint, dim=0)
+                all_observed_point = torch.cat(all_observed_point, dim=0)
+                all_observed_time = torch.cat(all_observed_time, dim=0)
+                all_generated_samples = torch.cat(all_generated_samples, dim=0)
+
+                pickle.dump(
+                    [
+                        # shape: [len(test_dataset), nsample, L, K]]
+                        all_generated_samples,
+                        all_target,
+                        all_evalpoint,
+                        all_observed_point,
+                        all_observed_time,
+                        scaler,
+                        mean_scaler,
+                    ],
+                    f,
+                )
+
 
             with open(foldername + "/result_nsample" + str(nsample) + ".pk", "wb") as f:
                 pickle.dump(

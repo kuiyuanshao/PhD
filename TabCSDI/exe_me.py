@@ -6,6 +6,7 @@ import yaml
 import os
 import numpy as np
 import pandas as pd
+import pickle
 from tqdm import tqdm
 
 from src.main_model_table import TabCSDI
@@ -20,7 +21,7 @@ parser.add_argument("--testmissingratio", type=float, default=0.8)
 parser.add_argument("--nfold", type=int, default=5, help="for 5-fold test")
 parser.add_argument("--unconditional", action="store_true", default=0)
 parser.add_argument("--modelfolder", type=str, default="")
-parser.add_argument("--nsample", type=int, default=100)
+parser.add_argument("--nsample", type=int, default=1)
 
 args = parser.parse_args()
 print(args)
@@ -38,13 +39,12 @@ print(json.dumps(config, indent=4))
 
 # Create folder
 current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-foldername = "./save/data_fold" + str(args.nfold) + "_" + current_time + "/"
+foldername = "./save/breast_fold" + str(args.nfold) + "_" + current_time + "/"
 print("model folder:", foldername)
 os.makedirs(foldername, exist_ok=True)
 with open(foldername + "config.json", "w") as f:
     json.dump(config, f, indent=4)
 
-    
 # Every loader contains "observed_data", "observed_mask", "gt_mask", "timepoints"
 train_loader, valid_loader, test_loader = get_dataloader(
     seed=args.seed,
@@ -64,12 +64,24 @@ if args.modelfolder == "":
         foldername=foldername,
     )
 else:
-    model.load_state_dict(torch.load("./save/" + "data_fold5_20240403_141215" + "/model.pth"))
+    model.load_state_dict(torch.load("./save/" + "breast_fold5_20240416_052953" + "/model.pth"))
 print("---------------Start testing---------------")
-output = []
-with tqdm(test_loader, mininterval=5.0, maxinterval=50.0) as it:
-    for batch_no, test_batch in enumerate(it, start=1):
-        output.append(model.evaluate(test_batch, 10)[0].detach().cpu().numpy())
-        
-output = np.concatenate(np.concatenate(np.concatenate(output, axis=0), axis=0), axis=0)
-pd.DataFrame(output).to_csv("generated_data.csv", sep = "\t")
+evaluate(model, test_loader, nsample=args.nsample, scaler=1, foldername=foldername)
+#all_target = []
+#all_generated_samples = []
+#with tqdm(test_loader, mininterval=5.0, maxinterval=50.0) as it:
+#    for batch_no, test_batch in enumerate(it, start=1):
+#        output = model.evaluate(test_batch, 100)
+#        samples, c_target, eval_points, observed_points, observed_time = output
+#        samples = samples.permute(0, 1, 3, 2)  # (B,nsample,L,K)
+#        c_target = c_target.permute(0, 2, 1)
+#        all_target.append(c_target)
+#        all_generated_samples.append(samples)
+#all_generated_samples = torch.cat(all_generated_samples, dim=0)
+#all_target = torch.cat(all_target, dim=0)
+
+#with open(
+#    foldername + "/generated_outputs_nsample" + str(nsample) + ".pk", "wb"
+#    ) as f:
+#        pickle.dump([all_generated_samples,all_target], f,)
+

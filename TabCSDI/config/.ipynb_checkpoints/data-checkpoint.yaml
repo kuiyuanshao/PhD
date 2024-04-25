@@ -1,12 +1,12 @@
 #type: args
 
 train:
-  epochs: 2
-  batch_size: 16 
+  epochs: 2000
+  batch_size: 64
   lr: 0.0005
 
 diffusion:
-  layers: 4 
+  layers: 5
   channels: 128
   nheads: 4 
   diffusion_embedding_dim: 128

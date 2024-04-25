@@ -1,0 +1,68 @@
+---
+title: "R Test"
+author: "Kuiyuan Shao"
+date: "2024-04-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+data <- read.csv("data.csv")[, -1]
+miss <- read.csv("miss.csv")
+mask <- is.na(miss)
+```
+
+```{r}
+library(ggplot2)
+observed <- read.csv("observed-Copy1.csv", sep = "\t")
+imputed <- read.csv("imputed-Copy1.csv", sep = "\t")
+
+for (i in 2:5){
+  observed[observed[, i] == 0, i] <- imputed[observed[, i] == 0, i]
+}
+
+imputed <- observed
+names(imputed) = c("index", "X_tilde", "Y", "X", "Z")
+imputed <- imputed[, -1]
+
+max_ <- lapply(miss, max, na.rm = T)
+max_ <- (unlist(max_) + 1)
+for (i in 1:4){
+  imputed[, i] <- imputed[, i] * max_[i] - 1
+}
+imputed$Z <- round(imputed$Z)
+lm(Y ~ X + Z, imputed)
+
+ggplot(imputed[is.na(miss$X), ]) + geom_point(aes(x = X, y = Y))
+
+```
+
+
+```{r}
+library(ggplot2)
+observed <- read.csv("observed_2.csv", sep = "\t")
+imputed <- read.csv("imputed_2.csv", sep = "\t")
+
+for (i in 2:5){
+  observed[observed[, i] == 0, i] <- imputed[observed[, i] == 0, i]
+}
+
+imputed <- observed
+names(imputed) = c("index", "X_tilde", "Y", "X", "Z")
+imputed <- imputed[, -1]
+
+max_ <- lapply(miss, max, na.rm = T)
+max_ <- (unlist(max_) + 1)
+for (i in 1:4){
+  imputed[, i] <- imputed[, i] * max_[i] - 1
+}
+imputed$Z <- round(imputed$Z)
+lm(Y ~ X + Z, imputed)
+
+ggplot(imputed[is.na(miss$X), ]) + geom_point(aes(x = X, y = Y))
+
+```

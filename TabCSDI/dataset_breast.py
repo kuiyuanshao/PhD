@@ -99,7 +99,7 @@ def get_dataloader(seed=1, nfold=5, batch_size=16, missing_ratio=0.1):
     start = (int)((nfold - 1) * len(dataset) * tmp_ratio)
     end = (int)(nfold * len(dataset) * tmp_ratio)
 
-    test_index = indlist[start:end]
+    test_index = indlist
     remain_index = np.delete(indlist, np.arange(start, end))
 
     np.random.shuffle(remain_index)
