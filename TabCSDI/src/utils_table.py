@@ -3,6 +3,7 @@ import torch
 from torch.optim import Adam
 from tqdm import tqdm
 import pickle
+import pandas as pd
 
 
 def train(
@@ -49,56 +50,56 @@ def train(
                 )
             lr_scheduler.step()
 
-        if valid_loader is not None and (epoch_no + 1) % valid_epoch_interval == 0:
-            print("Start validation")
-            model.eval()
-            avg_loss_valid = 0
-            # some initial settings
-            val_nsample = 15
-            val_scaler = 1
-            mse_total = 0
-            mae_total = 0
-            evalpoints_total = 0
+        # if valid_loader is not None and (epoch_no + 1) % valid_epoch_interval == 0:
+        #     print("Start validation")
+        #     model.eval()
+        #     avg_loss_valid = 0
+        #     # some initial settings
+        #     val_nsample = 15
+        #     val_scaler = 1
+        #     mse_total = 0
+        #     mae_total = 0
+        #     evalpoints_total = 0
 
-            with torch.no_grad():
-                with tqdm(valid_loader, mininterval=5.0, maxinterval=50.0) as it:
-                    for batch_no, valid_batch in enumerate(it, start=1):
-                        output = model.evaluate(valid_batch, val_nsample)
-                        # `eval_points` is `target_mask`. `observed_time` is `observed_tp`(10)
-                        # `c_target` is `observed_data`
-                        (
-                            samples,
-                            c_target,
-                            eval_points,
-                            observed_points,
-                            observed_time,
-                        ) = output
-                        samples = samples.permute(0, 1, 3, 2)  # (B,nsample,L,K)
-                        c_target = c_target.permute(0, 2, 1)  # (B,L,K)
-                        eval_points = eval_points.permute(0, 2, 1)
-                        observed_points = observed_points.permute(0, 2, 1)
+        #     with torch.no_grad():
+        #         with tqdm(valid_loader, mininterval=5.0, maxinterval=50.0) as it:
+        #             for batch_no, valid_batch in enumerate(it, start=1):
+        #                 output = model.evaluate(valid_batch, val_nsample)
+        #                 # `eval_points` is `target_mask`. `observed_time` is `observed_tp`(10)
+        #                 # `c_target` is `observed_data`
+        #                 (
+        #                     samples,
+        #                     c_target,
+        #                     eval_points,
+        #                     observed_points,
+        #                     observed_time,
+        #                 ) = output
+        #                 samples = samples.permute(0, 1, 3, 2)  # (B,nsample,L,K)
+        #                 c_target = c_target.permute(0, 2, 1)  # (B,L,K)
+        #                 eval_points = eval_points.permute(0, 2, 1)
+        #                 observed_points = observed_points.permute(0, 2, 1)
 
-                        # take the median from samples.
-                        samples_median = samples.median(dim=1)
-                        mse_current = (
-                            ((samples_median.values - c_target) * eval_points) ** 2
-                        ) * (val_scaler**2)
-                        mae_current = (
-                            torch.abs((samples_median.values - c_target) * eval_points)
-                        ) * val_scaler
+        #                 # take the median from samples.
+        #                 samples_median = samples.median(dim=1)
+        #                 mse_current = (
+        #                     ((samples_median.values - c_target) * eval_points) ** 2
+        #                 ) * (val_scaler**2)
+        #                 mae_current = (
+        #                     torch.abs((samples_median.values - c_target) * eval_points)
+        #                 ) * val_scaler
 
-                        mse_total += torch.sum(mse_current, dim=0)
-                        evalpoints_total += torch.sum(eval_points, dim=0)
+        #                 mse_total += torch.sum(mse_current, dim=0)
+        #                 evalpoints_total += torch.sum(eval_points, dim=0)
 
-                        it.set_postfix(
-                            ordered_dict={
-                                "rmse_total": torch.mean(
-                                    torch.sqrt(torch.div(mse_total, evalpoints_total))
-                                ).item(),
-                                "batch_no": batch_no,
-                            },
-                            refresh=True,
-                        )
+        #                 it.set_postfix(
+        #                     ordered_dict={
+        #                         "rmse_total": torch.mean(
+        #                             torch.sqrt(torch.div(mse_total, evalpoints_total))
+        #                         ).item(),
+        #                         "batch_no": batch_no,
+        #                     },
+        #                     refresh=True,
+        #                 )
 
     if foldername != "":
         torch.save(model.state_dict(), output_path)
@@ -108,7 +109,7 @@ def train(
     #     pickle.dump(history, f)
 
 
-def evaluate(model, test_loader, nsample=100, scaler=1, mean_scaler=0, foldername=""):
+def evaluate(model, test_loader, nsample=100, scaler=1, mean_scaler=0, foldername="", filename=""):
     # Control random seed in the current script.
     torch.manual_seed(0)
     np.random.seed(0)
@@ -164,14 +165,23 @@ def evaluate(model, test_loader, nsample=100, scaler=1, mean_scaler=0, foldernam
 
             # Use folloing code for saving generated results.
             with open(
-                foldername + "/generated_outputs_nsample" + str(nsample) + ".pk", "wb"
+                foldername + "/" + filename + ".pk", "wb"
             ) as f:
                 all_target = torch.cat(all_target, dim=0)
                 all_evalpoint = torch.cat(all_evalpoint, dim=0)
                 all_observed_point = torch.cat(all_observed_point, dim=0)
                 all_observed_time = torch.cat(all_observed_time, dim=0)
                 all_generated_samples = torch.cat(all_generated_samples, dim=0)
+                dim = [all_target.size()[0], all_target.size()[1]]
 
+                print(samples)
+                samples = all_generated_samples.reshape(dim)
+                all_target = all_target.reshape(dim)
+                observed = pd.DataFrame(all_target.detach().cpu().numpy())
+                samples = pd.DataFrame(samples.detach().cpu().numpy())
+                samples.to_csv("./imputations/" + filename + "_imputed.csv", sep = "\t")
+                observed.to_csv("./imputations/" + filename + "_observed.csv", sep = "\t")
+                
                 pickle.dump(
                     [
                         all_generated_samples,

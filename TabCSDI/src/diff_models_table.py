@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+import pandas as pd
 
 
 def get_torch_trans(heads=8, layers=1, channels=64):
@@ -173,3 +174,6 @@ class ResidualBlock(nn.Module):
         residual = residual.reshape(base_shape)
         skip = skip.reshape(base_shape)
         return (x + residual) / math.sqrt(2.0), skip
+
+
+

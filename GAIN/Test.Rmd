@@ -41,12 +41,12 @@ data_mis$X[id] <- NA
 
 ```{r}
 source("utils_torch.R")
-source("gain_torch.R")
-imp <- gain(data_mis, n = 50000, alpha = 100)
+source("gain_mask.R")
+imp <- gain(data_mis, n = 10000, alpha = 100, device = "cuda")
 
 lm(Y ~ X + Z, imp[[1]])
 
-ggplot(imp[[2]]) + geom_point(aes(x = X, y = Y))
+ggplot(imp[[1]]) + geom_point(aes(x = X, y = Y))
 
 ggplot(imp[[3]]) + geom_line(aes(x = epochs, y = loss, colour = Type)) 
 ```

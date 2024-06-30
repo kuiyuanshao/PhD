@@ -24,7 +24,7 @@ gain <- function(data, device = "cpu", batch_size = 128, hint_rate = 0.9,
   C <- t(replicate(batch_size, as.numeric(misCol)))
   
   norm_result <- normalize(data, numCol)
-  phase2vals <- norm_result$norm_data[which(misRow == F), which(misCol == 0)]
+  #phase2vals <- norm_result$norm_data[which(misRow == F), which(misCol == 0)]
   #print(phase2vals)
   
   norm_data <- norm_result$norm_data
@@ -136,21 +136,18 @@ gain <- function(data, device = "cpu", batch_size = 128, hint_rate = 0.9,
     M_mb <- ind_batch[[2]]$to(device = device)
     R_mb <- ind_batch[[3]]$to(device = device)
     
-    X_mb[is.na(X_mb[, which(misCol == 0)]), 
-         which(misCol == 0)] <- sample(phase2vals, sum(is.na(X_mb[, which(misCol == 0)])), 
-                                                              replace = T)
 
     X_mb <- torch_tensor(X_mb, device = device)
     
-    #Z_mb <- ((-0.01) * torch::torch_rand(c(batch_size, nCol)) + 0.01)$to(device = device)
+    Z_mb <- ((-0.01) * torch::torch_rand(c(batch_size, nCol)) + 0.01)$to(device = device)
     H_mb <- 1 * (matrix(runif(batch_size * 1, 0, 1), nrow = batch_size) < hint_rate)
     H_mb <- torch_tensor(H_mb, device = device)
     
   
     #H_mb <- M_mb * H_mb
     H_mb <- R_mb * H_mb
-    #X_mb <- M_mb * X_mb + (1 - M_mb) * (Z_mb)
-    #X_mb <- X_mb$to(device = device)
+    X_mb <- M_mb * X_mb + (1 - M_mb) * (Z_mb)
+    X_mb <- X_mb$to(device = device)
     
     d_loss <- D_loss(X_mb, M_mb, H_mb, R_mb)
     D_loss_mat[i, ] <- c(i, as.numeric(d_loss$detach()$cpu()))
@@ -169,11 +166,10 @@ gain <- function(data, device = "cpu", batch_size = 128, hint_rate = 0.9,
     pb$tick(tokens = list(what = "GAIN   "))
     Sys.sleep(1 / 10000)
   }
-  norm_data[misRow, which(misCol == 0)] <- sample(phase2vals, length(which(misRow == T)), replace = T)
   norm_data <- torch_tensor(norm_data, device = device)
-  #Z <- ((-0.01) * torch::torch_rand(c(nRow, nCol)) + 0.01)$to(device = device)
-  #X <- data_mask$torch.data * norm_data + (1 - data_mask$torch.data) * Z
-  #X <- X$to(device = device)
+  Z <- ((-0.01) * torch::torch_rand(c(nRow, nCol)) + 0.01)$to(device = device)
+  X <- data_mask$torch.data * norm_data + (1 - data_mask$torch.data) * Z
+  X <- X$to(device = device)
   
   G_sample <- generator(norm_data, R)
   

@@ -11,58 +11,151 @@ knitr::opts_chunk$set(echo = TRUE)
 
 
 ```{r}
-data <- read.csv("data.csv")[, -1]
-miss <- read.csv("miss.csv")
-mask <- is.na(miss)
+library(tidyverse)
+dir <- "C:/Users/GGPC/Documents/GitHub/PhD/RData"
+files <- list.files(dir)
+for (i in 1:1000){
+  load(paste0(dir, "/", files[i]))
+  index <- samp$solnas
+  samp <- as.data.frame(samp) %>%
+    select(-contains("bio2")) %>% 
+    select(-contains("avg")) %>%
+    mutate(hisp.strat = as.numeric(hisp.strat),
+           age.strat = as.numeric(age.strat)) %>%
+    select(-c(ln_na_true, ln_k_true, ln_kcal_true, 
+            ln_protein_true, sex, bkg, solnas))
+  samp$c_ln_k_true[!index] <- samp$c_ln_na_true[!index] <- samp$c_ln_kcal_true[!index] <- samp$c_ln_protein_true[!index] <- NA
+  write.csv(samp, file = paste0("C:/Users/GGPC/Documents/GitHub/PhD/Phase2csv/", files[i], ".csv"))
+}
 ```
 
 ```{r}
-library(ggplot2)
-observed <- read.csv("observed-Copy1.csv", sep = "\t")
-imputed <- read.csv("imputed-Copy1.csv", sep = "\t")
+library(mice)
+library(mixgb)
+source("C:/Users/GGPC/Documents/GitHub/PhD/GAIN/gain_mask.R")
+source("C:/Users/GGPC/Documents/GitHub/PhD/GAIN/utils_torch.R")
+gain_imp <- gain(dataset_ori, n = 20000, alpha = 10000, replace_ind = 27:30)
 
-for (i in 2:5){
-  observed[observed[, i] == 0, i] <- imputed[observed[, i] == 0, i]
+ggplot(gain_imp[[3]]) + geom_line(aes(x = epochs, y = loss, colour = Type)) 
+
+ggplot(samp) + geom_point(aes(x = c_ln_na_true, y = sbp)) 
+ggplot(gain_imp[[1]]) + geom_point(aes(x = c_ln_na_true, y = sbp)) 
+
+mod(gain_imp[[1]])
+```
+
+```{r}
+dir_result <- "C:/Users/GGPC/Documents/GitHub/PhD/TabCSDI/imputations/"
+dir <- "C:/Users/GGPC/Documents/GitHub/PhD/RData"
+files <- list.files(dir)
+result <- NULL
+
+for (i in 1:5){
+  digit <- str_pad(i, nchar(4444), pad=0)
+  imputation <- paste0(dir_result, "SampleData_", digit, "_imputed.csv")  
+  observation <- paste0(dir_result, "SampleData_", digit, "_observed.csv")
+  dataset_imp <- read.csv(imputation, sep = "\t")
+  dataset_obs <- read.csv(observation, sep = "\t")
+  dataset_ori <- read.csv(paste0("C:/Users/GGPC/Documents/GitHub/PhD/Phase2csv/", 
+                                 "SampleData_", digit, ".RData.csv"))
+  load(paste0(dir, "/", files[i]))
+  names(dataset_imp) <- names(dataset_obs) <- names(dataset_ori)
+  
+  for (j in 19:22){
+    dataset_obs[dataset_obs[, j] == 0, j] <- dataset_imp[dataset_obs[, j] == 0, j]
+  }
+  
+  max_ <- sapply(dataset_ori, max, na.rm = T) + 1
+  for (k in 2:length(max_)){
+    dataset_obs[, k] <- dataset_obs[, k] * max_[k] - 1
+  }
+  
+  pmm_imp <- mice(dataset_ori, m = 1, print = FALSE, 
+                  remove.collinear = F, maxit = 5,
+                  maxcor = 1.0001,
+                  predictorMatrix = quickpred(dataset_ori, 
+                                              mincor = 0.3))
+  pmm_data <- complete(pmm_imp, "long")[, -c(1, 2)]
+  
+  gain_data <- gain(dataset_ori, alpha = 10000, n = 20000, replace_ind = 27:30)[[1]]
+  
+  rf_imp <- mice(dataset_ori, 
+                   m = 1, 
+                   print = FALSE, 
+                   method = "rf", 
+                   remove.collinear = FALSE, 
+                   maxcor = 1.0001,
+                   maxit = 5, ntree = 100, 
+                   mtry = ncol(dataset_ori))
+  rf_data <- complete(rf_imp, "long")[, -c(1, 2)]
+  
+  mixgb_data <- mixgb(dataset_ori, m = 1)[[1]]
+  
+  mod <- function(data){
+    samp.design <- svydesign(id=~BGid, strata=~strat, weights=~bghhsub_s2, data=data)
+    m1.true <- svyglm(hypertension ~ c_age + c_bmi + c_ln_na_true + high_chol + usborn + female + bkg_pr + bkg_o, design=samp.design, family=quasibinomial())
+    m2.true <- svyglm(sbp ~ c_age + c_bmi + c_ln_na_true + high_chol + usborn + female + bkg_pr + bkg_o, design=samp.design, family=gaussian())
+    result <- as.data.frame(rbind(coef(m1.true), coef(m2.true)))
+    result$class <- c("binomial", "linear")
+    return (result)
+  }
+  
+  gain_result <- mod(gain_data)
+  pmm_result <- mod(pmm_data)
+  rf_result <- mod(rf_data)
+  true_result <- mod(samp)
+  diff_result <- mod(dataset_obs)
+  mixgb_result <- mod(mixgb_data)
+  
+  gain_result$type <- "gain"
+  pmm_result$type <- "pmm"
+  rf_result$type <- "rf"
+  true_result$type <- "true"
+  diff_result$type <- "diffusion"
+  mixgb_result$type <- "mixgb"
+  
+  result <- rbind(result, gain_result, pmm_result, rf_result, 
+                  true_result, diff_result, mixgb_result)
 }
 
-imputed <- observed
-names(imputed) = c("index", "X_tilde", "Y", "X", "Z")
-imputed <- imputed[, -1]
+ggplot(result) + 
+  geom_boxplot(aes(x = c_ln_na_true, colour = type)) + 
+  facet_wrap(~class, scales = "free")
 
-max_ <- lapply(miss, max, na.rm = T)
-max_ <- (unlist(max_) + 1)
-for (i in 1:4){
-  imputed[, i] <- imputed[, i] * max_[i] - 1
+retrieve <- function(result){
+  v <- NULL
+  for (type in c("gain", "pmm", "rf", "diffusion", "mixgb")){
+    for (class in c("linear", "binomial")){
+      temp <- result[result$type == type & result$class == class, ]
+      true <- result[result$type == "true" & result$class == class, ]
+      diff <- temp$c_ln_na_true - true$c_ln_na_true
+      v <- c(v, diff)
+    }
+  }
+  output <- as.data.frame(cbind(v, rep(c("gain", "pmm", "rf", "diffusion", "mixgb"), 2 * 5),
+                                rep(c("linear", "binomial"), 5 * 5)))
+  names(output) <- c("difference", "type", "class")
+  output$difference <- as.numeric(output$difference)
+  return (output)
 }
-imputed$Z <- round(imputed$Z)
-lm(Y ~ X + Z, imputed)
+output <- retrieve(result)
 
-ggplot(imputed[is.na(miss$X), ]) + geom_point(aes(x = X, y = Y))
-
+ggplot(output) + 
+  geom_boxplot(aes(x = difference, colour = type)) + 
+  facet_wrap(~class, scales = "free")
 ```
 
 
 ```{r}
-library(ggplot2)
-observed <- read.csv("observed_2.csv", sep = "\t")
-imputed <- read.csv("imputed_2.csv", sep = "\t")
+dir <- "C:/Users/GGPC/Documents/GitHub/PhD/Phase2csv/SampleData_0001.RData.csv"
+data <- read.csv(dir)
+ind <- !is.na(rowSums(data))
 
-for (i in 2:5){
-  observed[observed[, i] == 0, i] <- imputed[observed[, i] == 0, i]
-}
+phase2 <- data[ind, 19:22]
+data_ori <- data[ind, 27:30]
 
-imputed <- observed
-names(imputed) = c("index", "X_tilde", "Y", "X", "Z")
-imputed <- imputed[, -1]
 
-max_ <- lapply(miss, max, na.rm = T)
-max_ <- (unlist(max_) + 1)
-for (i in 1:4){
-  imputed[, i] <- imputed[, i] * max_[i] - 1
-}
-imputed$Z <- round(imputed$Z)
-lm(Y ~ X + Z, imputed)
-
-ggplot(imputed[is.na(miss$X), ]) + geom_point(aes(x = X, y = Y))
-
+write.csv(data_ori, file = "data.csv")
+write.csv(phase2, file = "denoised.csv")
 ```
+

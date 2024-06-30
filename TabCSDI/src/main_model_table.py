@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from src.diff_models_table import diff_CSDI
+import pandas as pd
 import yaml
 
 
@@ -49,7 +50,10 @@ class CSDI_base(nn.Module):
             )
 
         self.alpha_hat = 1 - self.beta
-        self.alpha = np.cumprod(self.alpha_hat)
+        alphas_cumprod = np.cumprod(self.alpha_hat)
+        self.alpha = alphas_cumprod
+        
+        
         self.alpha_torch = (
             torch.tensor(self.alpha).float().to(self.device).unsqueeze(1).unsqueeze(1)
         )
@@ -65,15 +69,26 @@ class CSDI_base(nn.Module):
         return pe
 
     def get_randmask(self, observed_mask):
-        rand_for_mask = torch.rand_like(observed_mask) * observed_mask
-        rand_for_mask = rand_for_mask.reshape(len(rand_for_mask), -1)
+        mask = observed_mask.detach().cpu().numpy().reshape(-1, 37)
+        rand_for_mask = mask.copy()
+        #rand_for_mask = torch.rand_like(observed_mask) * observed_mask
+        #rand_for_mask = rand_for_mask.reshape(len(rand_for_mask), -1)
 
-        for i in range(len(observed_mask)):
-            sample_ratio = 0.8  # np.random.rand()  # missing ratio
-            num_observed = observed_mask[i].sum().item()
-            num_masked = round(num_observed * sample_ratio)
-            rand_for_mask[i][rand_for_mask[i].topk(num_masked).indices] = -1
-        cond_mask = (rand_for_mask > 0).reshape(observed_mask.shape).float()
+        #for i in range(len(observed_mask)):
+        for i in range(mask.shape[1]):
+            if i in [17, 18, 19, 20]:
+                sample_ratio = 0.8  # np.random.rand()  # missing ratio
+                obs_indices = np.where(mask[:, i] == 1)[0]
+                miss_indices = np.random.choice(
+                    obs_indices, (int)(len(obs_indices) * sample_ratio), replace=False
+                )
+                #np.savetxt('test.txt', obs_indices, delimiter=',')
+                rand_for_mask[miss_indices, i] = -1
+            #num_observed = observed_mask[i].sum().item()
+            #num_masked = round(num_observed * sample_ratio)
+            #rand_for_mask[i][rand_for_mask[i].topk(num_masked).indices] = -1
+        cond_mask = (torch.from_numpy(rand_for_mask) > 0).reshape(observed_mask.shape).float().to("cuda")
+        #cond_mask = (rand_for_mask > 0).reshape(observed_mask.shape).float()
         return cond_mask
 
     def get_side_info(self, observed_tp, cond_mask):
@@ -107,10 +122,11 @@ class CSDI_base(nn.Module):
             loss_sum += loss.detach()
         return loss_sum / self.num_steps
 
+
     def calc_loss(
         self, observed_data, cond_mask, observed_mask, side_info, is_train, set_t=-1
     ):
-        B, K, L = observed_data.shape
+        B, K, L = observed_data.shape #B batch size, K = 1, L number of columns
         if is_train != 1:  # for validation
             t = (torch.ones(B) * set_t).long().to(self.device)
         else:
@@ -120,11 +136,20 @@ class CSDI_base(nn.Module):
         noisy_data = (current_alpha**0.5) * observed_data + (
             1.0 - current_alpha
         ) ** 0.5 * noise
+        #noise = noise.view(b, c, -1)
+        #rand_idx = torch.randperm(noise.shape[-1])
+        #noise = noise[:,:,rand_idx].view(B,,w,h).detach()
+        
+        #noisy_data = (current_alpha**0.5) * observed_data + (1-current_alpha) ** 0.5 * noise
         total_input = self.set_input_to_diffmodel(noisy_data, observed_data, cond_mask)
         predicted = self.diffmodel(total_input, side_info, t)  # (B,K,L)
 
         target_mask = observed_mask - cond_mask
+        
         residual = (noise - predicted) * target_mask
+        t_np = target_mask.detach().cpu().reshape(-1, 37).numpy() #convert to Numpy array
+        df = pd.DataFrame(t_np) #convert to a dataframe
+        df.to_csv("target_mask.csv",index=False) 
         num_eval = target_mask.sum()
         loss = (residual**2).sum() / (num_eval if num_eval > 0 else 1)
         return loss
@@ -134,6 +159,10 @@ class CSDI_base(nn.Module):
             total_input = noisy_data.unsqueeze(1)  # (B,1,K,L)
         else:
             cond_obs = (cond_mask * observed_data).unsqueeze(1)
+
+            #t_np = cond_mask.detach().cpu().reshape(-1, 37).numpy() #convert to Numpy array
+            #df = pd.DataFrame(t_np) #convert to a dataframe
+            #df.to_csv("testfile.csv",index=False) 
             noisy_target = ((1 - cond_mask) * noisy_data).unsqueeze(1)
             total_input = torch.cat([cond_obs, noisy_target], dim=1)  # (B,2,K,L)
 
@@ -142,7 +171,7 @@ class CSDI_base(nn.Module):
     def impute(self, observed_data, cond_mask, side_info, n_samples):
         B, K, L = observed_data.shape
         imputed_samples = torch.zeros(B, n_samples, K, L).to(self.device)
-
+        
         for i in range(n_samples):
             # generate noisy observation for unconditional model
             if self.is_unconditional == True:
@@ -157,7 +186,9 @@ class CSDI_base(nn.Module):
                     noisy_cond_history.append(noisy_obs * cond_mask)
 
             current_sample = torch.randn_like(observed_data)
-
+            samp = current_sample.detach().cpu().numpy().reshape(-1, 37)
+            samp[:, [17, 18, 19, 20]] = samp[:, [25, 26, 27, 28]]
+            current_sample = torch.from_numpy(samp).reshape(current_sample.shape).float().to("cuda")
             # perform T steps backward
             for t in range(self.num_steps - 1, -1, -1):
                 if self.is_unconditional == True:

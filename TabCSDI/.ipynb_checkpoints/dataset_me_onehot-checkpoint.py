@@ -7,7 +7,7 @@ import pandas as pd
 from torch.utils.data import DataLoader, Dataset
 
 def process_func(path: str, aug_rate=1, missing_ratio=0.2):
-    data = pd.read_csv(path)
+    data = pd.read_csv(path).iloc[:, 1:]
     data.replace("?", np.nan, inplace=True)
     data_aug = pd.concat([data] * aug_rate)
 
@@ -16,13 +16,13 @@ def process_func(path: str, aug_rate=1, missing_ratio=0.2):
 
     masks = observed_masks.copy()
     # for each column, mask {missing_ratio} % of observed values.
-    for col in range(observed_values.shape[1]):  # col #
-        if col == 2:
-            obs_indices = np.where(masks[:, col])[0]
-            miss_indices = np.random.choice(
-                obs_indices, (int)(len(obs_indices) * missing_ratio), replace=False
-            )
-            masks[miss_indices, col] = False
+    #for col in range(observed_values.shape[1]):  # col #
+    #    if col in [17, 18, 19, 20]:
+    #        obs_indices = np.where(masks[:, col] == 1)[0]
+    #        miss_indices = np.random.choice(
+    #            obs_indices, (int)(len(obs_indices) * missing_ratio), replace=False
+    #        )
+    #        masks[miss_indices, col] = False
     # gt_mask: 0 for missing elements and manully maksed elements
     gt_masks = masks.reshape(observed_masks.shape)
 
@@ -36,22 +36,23 @@ def process_func(path: str, aug_rate=1, missing_ratio=0.2):
 class tabular_dataset(Dataset):
     # eval_length should be equal to attributes number.
     def __init__(
-        self, eval_length=4, use_index_list=None, aug_rate=1, missing_ratio=0.2, seed=0
-    ):
+        self, eval_length=37, use_index_list=None, aug_rate=1, missing_ratio=0.2, seed=0,
+    name=""):
         self.eval_length = eval_length
         np.random.seed(seed)
 
-        dataset_path = "./data_me_onehot/data_mis.csv"
+        dataset_path = "C:/Users/GGPC/Documents/GitHub/PhD/Phase2csv/"
+        full_dataset_path = dataset_path + name
         processed_data_path = (
-            f"./data_me_onehot/missing_ratio-{missing_ratio}_seed-{seed}.pk"
+            f"./data_me_onehot/{name}-missing_ratio-{missing_ratio}_seed-{seed}.pk"
         )
         processed_data_path_norm = (
-            f"./data_me_onehot/missing_ratio-{missing_ratio}_seed-{seed}_max-min_norm.pk"
+            f"./data_me_onehot/{name}-missing_ratio-{missing_ratio}_seed-{seed}_max-min_norm.pk"
         )
 
         if not os.path.isfile(processed_data_path):
             self.observed_values, self.observed_masks, self.gt_masks = process_func(
-                dataset_path, aug_rate=aug_rate, missing_ratio=missing_ratio
+                full_dataset_path, aug_rate=aug_rate, missing_ratio=missing_ratio
             )
 
             with open(processed_data_path, "wb") as f:
@@ -86,8 +87,8 @@ class tabular_dataset(Dataset):
         return len(self.use_index_list)
 
 
-def get_dataloader(seed=1, nfold=5, batch_size=16, missing_ratio=0.2):
-    dataset = tabular_dataset(missing_ratio=missing_ratio, seed=seed)
+def get_dataloader(seed=1, nfold=5, batch_size=16, missing_ratio=0.2, name=""):
+    dataset = tabular_dataset(missing_ratio=missing_ratio, seed=seed, name=name)
     print(f"Dataset size:{len(dataset)} entries")
 
     indlist = np.arange(len(dataset))
@@ -108,7 +109,7 @@ def get_dataloader(seed=1, nfold=5, batch_size=16, missing_ratio=0.2):
 
     # Here we perform max-min normalization.
     processed_data_path_norm = (
-        f"./data_me_onehot/missing_ratio-{missing_ratio}_seed-{seed}_max-min_norm.pk"
+        f"./data_me_onehot/{name}-missing_ratio-{missing_ratio}_seed-{seed}_max-min_norm.pk"
     )
     if not os.path.isfile(processed_data_path_norm):
         print(
@@ -139,17 +140,17 @@ def get_dataloader(seed=1, nfold=5, batch_size=16, missing_ratio=0.2):
 
     # Create datasets and corresponding data loaders objects.
     train_dataset = tabular_dataset(
-        use_index_list=indlist, missing_ratio=missing_ratio, seed=seed
+        use_index_list=indlist, missing_ratio=missing_ratio, seed=seed, name=name
     )
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=1)
 
     valid_dataset = tabular_dataset(
-        use_index_list=indlist, missing_ratio=missing_ratio, seed=seed
+        use_index_list=indlist, missing_ratio=missing_ratio, seed=seed, name=name
     )
     valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=0)
 
     test_dataset = tabular_dataset(
-        use_index_list=indlist, missing_ratio=missing_ratio, seed=seed
+        use_index_list=indlist, missing_ratio=missing_ratio, seed=seed, name=name
     )
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=0)
 

@@ -77,7 +77,7 @@ renormalize <- function(norm_data, norm_parameters, numCol){
   max_val <- norm_parameters$max_val
   
   renorm_data <- norm_data
-  for (i in 1:ncol(data)){
+  for (i in 1:ncol(norm_data)){
     if (numCol[i] == 0){
       next
     }
