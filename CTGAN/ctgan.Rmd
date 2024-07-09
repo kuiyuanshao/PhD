@@ -1,0 +1,169 @@
+---
+title: "ctgan"
+author: "Kuiyuan Shao"
+date: "2024-03-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+source("ctgan_main.R")
+
+data <- simtwophasepaper()
+id <- sample(1:10000, 2000)
+data_mis <- data
+data_mis$X[id] <- NA
+write.csv(data_mis, file = "data_mis.csv")
+
+data = read.csv("data_gold.csv")
+sample <- ctgan(data, epochs = 150, batch_size = 500)
+
+lm(Y ~ X + Z, sample[[2]])
+ggplot(sample[[2]]) + geom_point(aes(x = X, y = Y))
+
+ggplot() + geom_line(aes(x = sample[[1]][, 1], 
+                          y = sample[[1]][, 2]), colour = "red") + 
+  geom_line(aes(x = sample[[1]][, 1], 
+                          y = sample[[1]][, 3]), colour = "blue")
+
+discrete_columns <- list("Z")
+transformer <- DataTransformer(max_clusters = as.integer(3))
+transformer$fit(data, discrete_columns)
+train_data <- transformer$transform(data)
+
+
+all.equal(train_data[, 2:12], train_data[, 25:35])
+which(rowSums((train_data[, 2:3] - train_data[, 8:9])^2) == 0)
+
+
+ggplot(data) + geom_point(aes(x = X_tilde, y = X))
+
+imp1 <- gain(data_mis, n = 2000, alpha = 100, beta = 1, hint_rate = 0.8)
+```
+
+
+```{python}
+import numpy as np
+import pandas as pd
+import torch
+from ctgan import CTGAN
+from ctgan.data_sampler import DataSampler
+from ctgan.data_transformer import DataTransformer
+from ctgan.ctgan import Generator
+df = pd.read_csv("data_gold.csv")
+discrete_columns = ["Z"]
+transformer = DataTransformer()
+transformer.fit(df, discrete_columns)
+train_data = transformer.transform(df)
+
+data_sampler = DataSampler(train_data, transformer.output_info_list, True)
+#mod = CTGAN(10)
+#mod.fit(df, discrete_columns)
+mean = torch.zeros(500, 128)
+std = mean + 1
+fakez = torch.normal(mean = mean, std = std)
+condvec = data_sampler.sample_condvec(500)
+c1, m1, col, opt = condvec
+
+c1 = torch.from_numpy(c1)
+m1 = torch.from_numpy(m1)
+fakez = torch.cat([fakez, c1], dim=1)
+
+from ctgan.synthesizers.ctgan import Generator
+from ctgan.synthesizers.ctgan import Discriminator
+g = Generator(128 + data_sampler.dim_cond_vec(), (256, 256), 31)
+d = Discriminator(31 + data_sampler.dim_cond_vec(), (256, 256), 10)
+data_dim = transformer.output_dimensions = 31
+
+fake = g(fakez)
+fakeact = ct._apply_activate(fake)
+fake_cat = torch.cat([fakeact, c1], dim=1)
+y_fake = d(fake_cat)
+
+perm = np.arange(500)
+np.random.shuffle(perm)
+real = data_sampler.sample_data(500, col[perm], opt[perm])
+c2 = c1[perm]
+real = torch.from_numpy(real.astype('float32'))
+real_cat = torch.cat([real, c2], dim=1)
+y_real = d(real_cat)
+pen = d.calc_gradient_penalty(real_cat, fake_cat )
+
+condvec = data_sampler.sample_original_condvec(500)
+c1 = condvec
+c1 = torch.from_numpy(c1)
+fakez = torch.cat([fakez, c1], dim=1)
+
+from torch import optim
+from torch.nn import BatchNorm1d, Dropout, LeakyReLU, Linear, Module, ReLU, Sequential, functional
+
+
+def calc_gradient_penalty(real_data, fake_data, d, device='cpu', pac=10, lambda_=10):
+    """Compute the gradient penalty."""
+    alpha = torch.rand(real_data.size(0) // pac, 1, 1, device=device)
+    alpha = alpha.repeat(1, pac, real_data.size(1))
+    alpha = alpha.view(-1, real_data.size(1))
+
+    interpolates = alpha * real_data + ((1 - alpha) * fake_data)
+
+    disc_interpolates = d(interpolates)
+
+    gradients = torch.autograd.grad(
+        outputs=disc_interpolates, inputs=interpolates,
+        grad_outputs=torch.ones(disc_interpolates.size(), device=device),
+        create_graph=True, retain_graph=True, only_inputs=True
+        )[0]
+
+    gradients_view = gradients.view(-1, pac * real_data.size(1)).norm(2, dim=1) - 1
+    gradient_penalty = ((gradients_view) ** 2).mean() * lambda_
+
+    return gradient_penalty
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```
+
+```{python}
+df = pd.read_csv("data_gold.csv")
+discrete_columns = ["Z"]
+ctgan = CTGAN(epochs = 30)
+ctgan.fit(df, discrete_columns)
+samp = ctgan.sample(2000)
+samp.to_csv("generated.csv", sep = "\t")
+
+from sklearn.linear_model import LinearRegression
+
+x = samp[["X", "Z"]]
+y = samp["Y"]
+
+regressor = LinearRegression()
+regressor.fit(x, y)
+regressor.coef_
+
+
+python3 main_letter_spam.py --data_name data  --miss_rate 0.2 --batch_size 128 --hint_rate 0.9 --alpha 1000 --iterations 100000
+
+
+```

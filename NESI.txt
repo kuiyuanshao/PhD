@@ -1,0 +1,36 @@
+ssh ksha712@lander.nesi.org.nz
+
+ssh login.mahuika.nesi.org.nz
+
+fig.write_html("k.html")
+
+cd /nesi/project/uoa03789
+
+conda env create -f rmidas-env.yml -p /nesi/project/uoa03789/rmidas
+
+srun --account uoa03789 --cpus-per-task 20 --mem 6G --gpus-per-node=A100:2 --time 01:00:00 --pty bash
+
+squeue --me
+scancel -u [ksha712] #kill the job
+
+module purge && module load Miniconda3
+source $(conda info --base)/etc/profile.d/conda.sh
+export PYTHONNOUSERSITE=1
+
+module load R/4.2.1-gimkl-2022a cuDNN/8.6.0.163-CUDA-11.8.0
+
+module load Python/3.10.5-gimkl-2022a cuDNN/8.6.0.163-CUDA-11.8.0
+
+conda activate /nesi/project/uoa03789/rmidas
+module load PyTorch
+
+.libPaths("/nesi/project/uoa03789/R/gimkl-2022a/4.2")
+rMIDAS::set_python_env(x = "rmidas", type = "conda")
+
+source("ctgan_main.R")
+data <- simtwophasepaper()
+sample <- ctgan(data, epochs = 500, batch_size = 200)
+
+echo -e "module purge && module load Miniconda3 \nsource $(conda info --base)/etc/profile.d/conda.sh \nexport PYTHONNOUSERSITE=1 \nconda activate rmidas \nmodule load R/4.2.1-gimkl-2022a cuDNN/8.6.0.163-CUDA-11.8.0" > ~/.config/rstudio_on_nesi/prelude.bash
+
+python3 main_letter_spam.py --data_name spam --miss_rate: 0.2 --batch_size 128 --hint_rate 0.9 --alpha 100 --iterations 10000

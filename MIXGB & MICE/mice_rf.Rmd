@@ -1,0 +1,131 @@
+---
+title: "mice-rf"
+author: "Kuiyuan Shao"
+date: "2023-09-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+source("datasim.R")
+library(mice)
+m = 10
+set.seed(10086)
+true_data <- simtwophasepaper(c(1, 1))
+true_data <- true_data[, -1]
+data_mis <- subsel(true_data, targetcols = 3)
+rfobj <- mice(data_mis, m = m, method = "rf", print = F, mtry = 3)
+rfdata <- complete(rfobj, "long")
+coef_mat_m1 <- matrix(nrow = m)
+var_mat_m1 <- matrix(nrow = m)
+curr_m <- 1
+for (j in seq(1, nrow(rfdata), by = nrow(true_data))){
+    curr_fullset <- rfdata[j:(j + nrow(true_data) - 1), ]
+
+    m1_imp <- lm(Y ~ X + Z, 
+                 data = curr_fullset)
+    coef_mat_m1[curr_m, ] <- coef(m1_imp)[2]
+        
+    var_mat_m1[curr_m, ] <- diag(vcov(m1_imp))[2]
+        
+    curr_m <- curr_m + 1
+}
+
+coef_mat_m1
+var_mat_m1
+```
+
+
+
+
+
+```{r}
+randomForest.donors <- function(data, ntree) {
+  mis_col <- as.numeric(which(colSums(is.na(data)) > 0))
+  mis_row <- as.numeric(which(rowSums(is.na(data)) > 0))
+  xobs <- samp_mis[-mis_row, -mis_col]
+  xmis <- samp_mis[mis_row, -mis_col]
+  yobs <- samp_mis[-mis_row, mis_col]
+  onetree <- function(xobs, xmis, yobs) {
+    # Function to fit a single tree
+    fit <- randomForest::randomForest(
+      x = xobs,
+      y = yobs,
+      ntree = 1
+    )
+    leafnr <- predict(object = fit, newdata = xobs, nodes = TRUE)
+    leafnr <- as.vector(attr(leafnr, "nodes"))
+    nodes <- predict(object = fit, newdata = xmis, nodes = TRUE)
+    nodes <- as.vector(attr(nodes, "nodes"))
+    donor <- lapply(nodes, function(s) yobs[leafnr == s])
+    return(donor)
+  }
+
+  forest <- sapply(seq_len(ntree), FUN = function(s) onetree(xobs, xmis, yobs))
+  data[mis_row, mis_col] <- apply(forest, MARGIN = 1, FUN = function(s) sample(unlist(s), 1))
+  return (data)
+}
+
+ranger.donors <- function(data, ntree) {
+  mis_col <- as.numeric(which(colSums(is.na(data)) > 0))
+  mis_row <- as.numeric(which(rowSums(is.na(data)) > 0))
+  xobs <- samp_mis[-mis_row, -mis_col]
+  xmis <- samp_mis[mis_row, -mis_col]
+  yobs <- samp_mis[-mis_row, mis_col]
+  fit <- suppressWarnings(ranger::ranger(x = xobs, y = yobs, num.trees = ntree, mtry = 3))
+
+  nodes <- predict(
+    object = fit, data = rbind(xobs, xmis),
+    type = "terminalNodes", predict.all = TRUE
+  )
+  nodes <- ranger::predictions(nodes)
+  nodes_obs <- nodes[1:nrow(xobs), , drop = FALSE]
+  nodes_mis <- nodes[(nrow(xobs) + 1):nrow(nodes), , drop = FALSE]
+
+  select_donors <- function(i) {
+    # Function to extract all eligible donors for each missing value
+    donors <- split(yobs, nodes_obs[, i])
+    donors[as.character(nodes_mis[, i])]
+  }
+
+  forest <- sapply(seq_len(ntree), FUN = select_donors)
+  data[mis_row, mis_col] <- apply(forest, MARGIN = 1, FUN = function(s) 
+    sample(unlist(s), 1))
+  return (data)
+}
+
+```
+
+
+```{r}
+source("datasim.R")
+library(mice)
+library(mixgb)
+library(CALIBERrfimpute)
+true_data <- simtwophasepaper(c(1, 1))
+true_data <- true_data[, -1]
+samp_mis <- subsel(true_data, rate = 0.2, targetcols = 3)
+
+rfobj <- mice(samp_mis, method = c('rfcont'), m = 1, maxit = 1)
+yhat <- rfimputenorm(samp_mis, ntree = 20, aux_col = 1)
+#yhat2 <- mixgb(samp_mis, m = 1, xgb.params = list(subsample = 0.4))
+#yhat2  <- rfimpute(samp_mis, aux_col = 1, ntree = 10)
+mod <- lm(Y ~ X + Z, data = yhat)
+coef(mod)
+mod <- lm(Y ~ X + Z, data = complete(rfobj))
+coef(mod)
+mod <- lm(Y ~ X + Z, data = true_data)
+coef(mod)
+
+
+sqrt(mean((yhat$X_tilde - yhat$X)^2))
+#sqrt(mean((true_data$X_tilde - true_data$X)^2) / var(true_data$X))
+#sqrt(mean((yhat$X - true_data$X)^2) / var(true_data$X))
+#sqrt(mean((yhat2[[1]]$X - true_data$X)^2) / var(true_data$X))
+
+```

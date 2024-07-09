@@ -1,0 +1,123 @@
+---
+title: "Test"
+author: "Kuiyuan Shao"
+date: "2024-03-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+pacman::p_load(torch, progress, caret, ggplot2)
+
+
+simtwophasepaper <- function(SD = c(sqrt(3), sqrt(3))){
+  Nsim <- 3000
+  n  <- 10000
+  n2 <- 400
+  ######################################
+  beta <- c(1, 1, 1)
+  e_U <- SD
+  mx <- 0; sx <- 1; zrange <- 1; zprob <- .5
+  simZ   <- rbinom(n, zrange, zprob)
+  simX   <- (1-simZ)*rnorm(n, 0, 1) + simZ*rnorm(n, 0.5, 1)
+  epsilon <- rnorm(n, 0, 1)
+  simY    <- beta[1] + beta[2]*simX + beta[3]*simZ + epsilon
+  simX_tilde <- simX + rnorm(n, 0, e_U[1]*(simZ==0) + e_U[2]*(simZ==1))
+  data <- data.frame(X_tilde=simX_tilde, Y=simY, X=simX, Z=simZ)
+  return (data)
+}
+
+
+set.seed(666)
+data <- simtwophasepaper()
+id <- sample(1:10000, 8000)
+data_mis <- data
+data_mis$X[id] <- NA
+
+write.csv(data_mis, file = "data_mis.csv")
+```
+
+```{r}
+source("utils_torch.R")
+source("gain_torch.R")
+imp <- gain(data_mis, n = 10000, alpha = 100)
+
+lm(Y ~ X + Z, imp[[1]])
+
+ggplot(imp[[1]]) + geom_point(aes(x = X, y = Y))
+
+ggplot(imp[[3]]) + geom_line(aes(x = epochs, y = loss, colour = Type)) 
+
+#samples = samples.permute(0, 1, 3, 2)
+```
+
+
+
+
+```{r}
+library(torch)
+library(progress)
+library(reticulate)
+source_python("data_sampler.py")
+source_python("data_transformer.py")
+
+data_transform <- function(data){
+  transformer <<- DataTransformer()
+  transformer$fit(data, "Z")
+  train_data <- transformer$transform(data)
+  
+  R <<- as.numeric(!is.na(rowSums(data)))
+  misRow <<- R == 0
+  
+  misCol <- as.numeric(!is.na(colSums(data)))
+  ind <- 1
+  st <- 1
+  st_c <- 1
+  mis_col_v <- list()
+  for (column_info in transformer$output_info_list){
+    for (span_info in column_info){
+      if (ind %in% which(misCol == 0) & span_info$activation_fn != "tanh"){
+        ed <- st + span_info$dim - 1
+        mis_col_v[[st_c]] <- c(st - 1, ed)
+        st_c <- st_c + 1
+        break
+      }
+      st <- st + span_info$dim
+    }
+    ind <- ind + 1
+  }
+  
+  for (bool in which(R == 0)){
+    for (cols in mis_col_v){
+      train_data[bool, cols[1]:cols[2]] <- NA
+    }
+  }
+  
+  return (train_data)
+}
+```
+
+
+```{r}
+source("utils_torch.R")
+source("gain_torch_clusternorm.R")
+data$X_tilde - rnorm()
+
+imp <- gain(data_mis, n = 1000)
+lm(Y ~ X + Z, imp[[1]])
+ggplot(imp[[1]]) + geom_point(aes(x = X, y = Y))
+#ggplot(data) + geom_point(aes(x = X, y = Y))
+
+ggplot(imp[[2]]) + geom_line(aes(x = epochs, y = loss, colour = Type)) 
+
+transformer <<- DataTransformer()
+transformer$fit(data_mis, "Z")
+train_data_miss <- transformer$transform(data_mis)
+sum(rowSums((train_data[, 24:33] - train_data_miss[, 24:33])^2) == 0)
+
+
+```
