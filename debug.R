@@ -1,8 +1,9 @@
 pacman::p_load("caret", "reticulate", "ggplot2", "survival", "data.table", "plyr")
 
-source("/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/generateGigantiData.R")
-data <- read.csv("/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/SurvivalSample/-1_0_-2_0_-0.25/BLS/BLS_0001.csv")
-load("/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/Output/-1_0_-2_0_-0.25/SurvivalData_0001.RData")
+setwd(dir = "/nesi/project/uoa03789/PhD/SamplingDesigns")
+source("./SurvivalData/generateGigantiData.R")
+data <- read.csv("./SurvivalData/SurvivalSample/-1_0_-2_0_-0.25/BLS/BLS_0001.csv")
+load("./SurvivalData/Output/-1_0_-2_0_-0.25/SurvivalData_0001.RData")
 
 for (var in c("A.star", "D.star", "C.star", "A", "D", "C", "CFAR_PID", "X.1")){
   data[[var]] <- NULL
@@ -39,7 +40,7 @@ target_variables_2 = c("lastC",
                        "AGE_AT_LAST_VISIT",
                        "ARTage", "OIage", "last.age", 
                        "ade", "fu")
-source("/nesi/project/uoa03789/PhD/SamplingDesigns/GANs/cWGAIN-GP.R")
+source("./GANs/cWGAIN-GP.R")
 gain_imp <- cwgangp(data, m = 20, 
                     params = list(batch_size = 128, gamma = 1, lambda = 10, alpha = 1, beta = 0.5, 
                                   lr_g = 1e-4, lr_d = 1e-6, 

@@ -151,21 +151,22 @@ result_df <- vector("list", n * length(foldernames) * length(designnames))
 m <- 1
 pb <- txtProgressBar(min = 0, max = n, initial = 0) 
 
-source("/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/generateGigantiData.R")
+setwd(dir = "/nesi/project/uoa03789/PhD/SamplingDesigns")
+source("./SurvivalData/generateGigantiData.R")
 for (i in n){
   setTxtProgressBar(pb, i)
   digit <- str_pad(i, nchar(4444), pad=0)
   for (j in 1:length(foldernames)){
     for (z in 1:length(designnames)){
-      if (!file.exists(paste0("/nesi/project/uoa03789/PhD/SamplingDesigns/MECSDI/imputations", 
+      if (!file.exists(paste0("./MECSDI/imputations", 
                               foldernames[j], designnames[z], designnames[z], "_", digit, ".xlsx"))){
         next
       }
-      load(paste0("/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/Output", foldernames[j], "/SurvivalData_", digit, ".RData"))
-      curr_sample <- read.csv(paste0("/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/SurvivalSample", 
+      load(paste0("./SurvivalData/Output", foldernames[j], "/SurvivalData_", digit, ".RData"))
+      curr_sample <- read.csv(paste0("./SurvivalData/SurvivalSample", 
                                      foldernames[j], designnames[z], designnames[z], "_", digit, ".csv"))
       
-      diff_imp <- read_excel_allsheets(paste0("/nesi/project/uoa03789/PhD/SamplingDesigns/MECSDI/imputations", 
+      diff_imp <- read_excel_allsheets(paste0("./MECSDI/imputations", 
                                               foldernames[j], designnames[z], designnames[z], "_", digit, ".xlsx"))
       imp_coefs_vars.diff <- find_coef_var(imp = diff_imp, sample = curr_sample, type = "diffusion", design = designnames[z])
       
@@ -176,10 +177,10 @@ for (i in n){
       curr_sample <- exclude(curr_sample[curr_sample$R == 1, ])
       complete <- coxph(Surv(fu, ade) ~ X, data = curr_sample, y = FALSE)
       
-      load(paste0("/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/SurvivalSample/MICE", 
+      load(paste0("./SurvivalData/SurvivalSample/MICE", 
                   foldernames[j], designnames[z], "/MICE_IMPUTE_", digit, ".RData"))
       imp_coefs_vars.mice <- find_coef_var(imp = imputed_data_list, sample = curr_sample, type = "mice", design = designnames[z])
-      load(paste0("/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/SurvivalSample/MIXGB", 
+      load(paste0("./SurvivalData/SurvivalSample/MIXGB", 
                   foldernames[j], designnames[z], "/MIXGB_IMPUTE_", digit, ".RData"))
       imp_coefs_vars.mixgb <- find_coef_var(imp = imputed_data_list, sample = curr_sample, type = "mixgb", design = designnames[z])
       
@@ -209,4 +210,4 @@ for (i in n){
   }
 }
 
-save(result_df, file = "/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/SurvivalSample/result_imputation.RData")
+save(result_df, file = "./SurvivalData/SurvivalSample/result_imputation.RData")

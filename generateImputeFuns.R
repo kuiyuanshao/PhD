@@ -1,4 +1,6 @@
 pacman::p_load("mice", "mixgb", "dplyr", "caret")
+setwd(dir = "/nesi/project/uoa03789/PhD/SamplingDesigns")
+
 
 generateMiceImpute <- function(data, digit, path, type){
   if (type == "survival"){
@@ -60,7 +62,7 @@ generateMiceImpute <- function(data, digit, path, type){
 
 generateMixgbImpute <- function(data, digit, path, type){
   if (type == "survival"){
-    source("/nesi/project/uoa03789/PhD/SamplingDesigns/mixgbME.R")
+    source("./mixgbME.R")
     for (var in c("A.star", "D.star", "C.star", "A", "D", "C", "X.1", "CFAR_PID")){
       data[[var]] <- NULL
     }
@@ -80,7 +82,7 @@ generateMixgbImpute <- function(data, digit, path, type){
 }
 
 generateGansImpute <- function(data, digit, path, design, type){
-  source("/nesi/project/uoa03789/PhD/SamplingDesigns/GANs/cWGAIN-GP.R")
+  source("./GANs/cWGAIN-GP.R")
   if (type == "nutrition"){
     data$idx <- as.factor(data$idx)
     if (design == "/ODS_exactAlloc"){
@@ -168,7 +170,7 @@ generateGansImpute <- function(data, digit, path, design, type){
 
 
 generateCycleGansImpute <- function(data, digit, path, design, type){
-  source("/nesi/project/uoa03789/PhD/SamplingDesigns/GANs/ccycleWGAN-GP.R")
+  source("./GANs/ccycleWGAN-GP.R")
   if (type == "nutrition"){
     data$idx <- as.factor(data$idx)
     if (design == "/ODS_exactAlloc"){

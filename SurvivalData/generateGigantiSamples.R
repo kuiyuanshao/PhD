@@ -1,5 +1,6 @@
 pacman::p_load('dplyr', 'plyr','stringr', 'mvtnorm','MASS','data.table', 'sampling')
-source("/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/generateGigantiData.R")
+setwd("/nesi/project/uoa03789/PhD/SamplingDesigns")
+source("./SurvivalData/generateGigantiData.R")
 
 generateGigantiSamples <- function(population, population_name, missing_ratio = 0.75, id_variable = "CFAR_PID", 
                                    target_variables_1 = c("A.star", "D.star", "lastC.star", 
@@ -13,7 +14,7 @@ generateGigantiSamples <- function(population, population_name, missing_ratio = 
                                                           "ARTage", "OIage", "last.age", 
                                                           "ade", "fu"),
                                    digit){
-  mainDir <- "/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData"
+  mainDir <- "./SurvivalData"
   dir.create(file.path(mainDir, paste0("SurvivalSample")), showWarnings = FALSE)
   dir.create(file.path(mainDir, paste0("SurvivalSample/", population_name)), showWarnings = FALSE)
   dir.create(file.path(mainDir, paste0("SurvivalSample/", population_name, "/SRS")), showWarnings = FALSE)
@@ -83,7 +84,7 @@ for (k in 1:n){
     set.seed(seed)
     seed <- seed + 1
     #generateGigantiData(beta.X[i], beta.Y[i], gamma.X[i], gamma.Y[i], covXY[i], digit)
-    load(paste0("/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/Output/",
+    load(paste0("./SurvivalData/Output/",
                 beta.X[i], "_", beta.Y[i], "_",
                 gamma.X[i], "_", gamma.Y[i], "_",
                 covXY[i], "/SurvivalData_", digit, ".RData"))

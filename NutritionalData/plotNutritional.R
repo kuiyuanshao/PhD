@@ -1,7 +1,7 @@
 pacman::p_load("ggplot2", "tidyr", "dplyr", "RColorBrewer", "ggh4x")
-
+setwd("/nesi/project/uoa03789/PhD/SamplingDesigns")
 #### MODEL-BASED RESULTS
-load("/nesi/project/uoa03789/PhD/SamplingDesigns/NutritionalData/NutritionalSample/result_imputation.RData")
+load("./NutritionalData/NutritionalSample/result_imputation.RData")
 combined_df.1 <- bind_rows(result_df.1) %>% 
   filter(grepl("^c_ln_na_true", rownames(.))) %>%
   pivot_longer(
@@ -180,7 +180,7 @@ ggplot(rmse.2 %>% filter(METHOD != "COMPL")) +
 
 
 #### DESIGN-BASED RESULTS vs MODEL-BASED RESULTS
-load("/nesi/project/uoa03789/PhD/SamplingDesigns/NutritionalData/NutritionalSample/result_design_based.RData")
+load("./NutritionalData/NutritionalSample/result_design_based.RData")
 combined_df_design.1 <- bind_rows(result_df.1) %>% 
   filter(grepl("^c_ln_na_bio1", rownames(.))) %>%
   pivot_longer(

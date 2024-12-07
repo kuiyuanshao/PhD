@@ -1,5 +1,5 @@
 pacman::p_load('dplyr', 'plyr','stringr', 'mvtnorm','MASS','data.table', 'sampling')
-
+setwd("/nesi/project/uoa03789/PhD/SamplingDesigns")
 generateGigantiData <- function(beta.X = -1, beta.Y = 0.25,
                                 gamma.X = -2, gamma.Y = 0.5,
                                 covXY = 0.25, digit = "0001"){
@@ -114,16 +114,16 @@ generateGigantiData <- function(beta.X = -1, beta.Y = 0.25,
   
   alldata$CFAR_PID<-paste("A",formatC(as.numeric(alldata$ID),width=6,format='f',digits=0,flag='0'),sep="")
   
-  if(!dir.exists('/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/Output')){system('mkdir /nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/Output')}
+  if(!dir.exists('./SurvivalData/Output')){system('mkdir ./SurvivalData/Output')}
   
-  if(!dir.exists(paste0('/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/Output/', 
+  if(!dir.exists(paste0('./SurvivalData/Output/', 
                         beta.X, "_", beta.Y, "_",
                         gamma.X, "_", gamma.Y, "_",
-                        covXY))){system(paste0('mkdir /nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/Output/', 
+                        covXY))){system(paste0('mkdir ./SurvivalData/Output/', 
                                                beta.X, "_", beta.Y, "_",
                                                gamma.X, "_", gamma.Y, "_",
                                                covXY))}
-  save(alldata, file=paste0('/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/Output/', 
+  save(alldata, file=paste0('./SurvivalData/Output/', 
                             beta.X, "_", beta.Y, "_",
                             gamma.X, "_", gamma.Y, "_",
                             covXY, '/SurvivalData_', digit, '.RData'),compress = 'xz')

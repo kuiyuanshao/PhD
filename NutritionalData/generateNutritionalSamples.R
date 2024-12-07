@@ -2,7 +2,7 @@ pacman::p_load("stringr", "dplyr", "data.table")
 generateSamples <- function(population, population_name, n_phase2, stratum_variable, outcome_variable, target_variables_1, target_variables_2, model_formula, digit){
   nrow <- dim(population)[1]
   
-  mainDir <- getwd()
+  mainDir <- "./NutritionalData"
   dir.create(file.path(mainDir, population_name), showWarnings = FALSE)
   
   dir.create(file.path(mainDir, paste0(population_name, "/SRS")), showWarnings = FALSE)
@@ -171,10 +171,10 @@ generateSamples <- function(population, population_name, n_phase2, stratum_varia
   write.csv(data_sfs_exactAlloc, file = paste0(file.path(mainDir, paste0(population_name, "/SFS_exactAlloc")), "/", "SFS_exactAlloc_", digit, ".csv"))
 }
 
-setwd("/nesi/project/uoa03789/PhD/SamplingDesigns/NutritionalData")
+setwd("/nesi/project/uoa03789/PhD/SamplingDesigns")
 # The stratum variable is assumed to be a numeric strata, and the minimum is assumed to be 1.
-source("/nesi/project/uoa03789/PhD/SamplingDesigns/exactAlloc.R")
-source("/nesi/project/uoa03789/PhD/SamplingDesigns/NutritionalData/generateTargetPopulation.R")
+source("./exactAlloc.R")
+source("./NutritionalData/generateTargetPopulation.R")
 # Nutritional Data
 n <- 100
 pb <- txtProgressBar(min = 0, max = n, initial = 0) 
@@ -183,7 +183,7 @@ for (i in 1:n){
   setTxtProgressBar(pb, i)
   digit <- str_pad(i, nchar(4444), pad=0)
   generateNutritionalData(digit)
-  load(paste0("/nesi/project/uoa03789/PhD/SamplingDesigns/NutritionalData/Output/NutritionalData_", digit, ".RData"))
+  load(paste0("./NutritionalData/Output/NutritionalData_", digit, ".RData"))
   generateSamples(as.data.frame(pop), "NutritionalSample", 1000, "idx", "sbp", 
                   c("c_ln_na_bio1", "c_ln_k_bio1", "c_ln_kcal_bio1", "c_ln_protein_bio1"), 
                   c("c_ln_na_true", "c_ln_k_true", "c_ln_kcal_true", "c_ln_protein_true"), 

@@ -1,5 +1,7 @@
 pacman::p_load("survey", "stringr")
 
+setwd(dir = "/nesi/project/uoa03789/PhD/SamplingDesigns")
+
 influenceFunLogistic <- function(modelfit) {
   mm <- model.matrix(modelfit)
   hat <- (t(mm) %*% (mm * modelfit$fitted.values * (1 - modelfit$fitted.values))) / nrow(mm)
@@ -129,8 +131,8 @@ for (i in 1:n){
   setTxtProgressBar(pb, i)
   for (j in 1:length(foldernames)){
     digit <- str_pad(i, nchar(4444), pad=0)
-    load(paste0("/nesi/project/uoa03789/PhD/SamplingDesigns/NutritionalData/Output/NutritionalData_", digit, ".RData"))
-    curr_sample <- read.csv(paste0("/nesi/project/uoa03789/PhD/SamplingDesigns/NutritionalData/NutritionalSample", foldernames[j], foldernames[j], "_", digit, ".csv"))
+    load(paste0("./NutritionalData/Output/NutritionalData_", digit, ".RData"))
+    curr_sample <- read.csv(paste0("./NutritionalData/NutritionalSample", foldernames[j], foldernames[j], "_", digit, ".csv"))
     result <- calibrateFun(curr_sample, samp, foldernames[j], digit)
     result_df.1[[m]] <- result[[1]]
     result_df.2[[m]] <- result[[2]]
@@ -138,5 +140,5 @@ for (i in 1:n){
   }
 }
 
-save(result_df.1, result_df.2, file = "/nesi/project/uoa03789/PhD/SamplingDesigns/NutritionalData/NutritionalSample/result_design_based.RData")
+save(result_df.1, result_df.2, file = "./NutritionalData/NutritionalSample/result_design_based.RData")
 

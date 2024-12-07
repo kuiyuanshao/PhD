@@ -11,25 +11,26 @@ foldernames <- c("/-1_0_-2_0_-0.25", "/-1_0_-2_0_0", "/-1_0_-2_0_0.25",
 foldernames <- foldernames[task_id]
 designnames <- c("/SRS", "/BLS")
 
-source("/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/generateImputeFuns.R")
+setwd("/nesi/project/uoa03789/PhD/SamplingDesigns")
+source("./SurvivalData/generateImputeFuns.R")
 n <- 100
 pb <- txtProgressBar(min = 0, max = n, initial = 0)
-if(!dir.exists('/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/SurvivalSample/MICE')){system('mkdir /nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/SurvivalSample/MICE')}
-if(!dir.exists('/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/SurvivalSample/MIXGB')){system('mkdir /nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/SurvivalSample/MIXGB')}
-if(!dir.exists('/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/SurvivalSample/GANs')){system('mkdir /nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/SurvivalSample/GANs')}
-if(!dir.exists('/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/SurvivalSample/cycleGANs')){system('mkdir /nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/SurvivalSample/cycleGANs')}
+if(!dir.exists('./SurvivalData/SurvivalSample/MICE')){system('mkdir ./SurvivalData/SurvivalSample/MICE')}
+if(!dir.exists('./SurvivalData/SurvivalSample/MIXGB')){system('mkdir ./SurvivalData/SurvivalSample/MIXGB')}
+if(!dir.exists('./SurvivalData/SurvivalSample/GANs')){system('mkdir ./SurvivalData/SurvivalSample/GANs')}
+if(!dir.exists('./SurvivalData/SurvivalSample/cycleGANs')){system('mkdir ./SurvivalData/SurvivalSample/cycleGANs')}
 for (j in foldernames){
   cat("Beta:", j, "\n")
   for (i in n){
     cat("Iteration:", i, "\n")
     digit <- str_pad(i, nchar(4444), pad=0)
     for (z in designnames){
-      data <- read.csv(paste0("/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/SurvivalSample", j, z, z, "_", digit, ".csv"))
-      curr_path <- paste0('/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/SurvivalSample/MICE', j, z)
+      data <- read.csv(paste0("./SurvivalData/SurvivalSample", j, z, z, "_", digit, ".csv"))
+      curr_path <- paste0('./SurvivalData/SurvivalSample/MICE', j, z)
       if(!dir.exists(curr_path)){dir.create(curr_path, recursive = T)}
       generateMiceImpute(data, digit, curr_path, type = "survival")
 
-      curr_path <- paste0('/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/SurvivalSample/MIXGB', j, z)
+      curr_path <- paste0('./SurvivalData/SurvivalSample/MIXGB', j, z)
       if(!dir.exists(curr_path)){dir.create(curr_path, recursive = T)}
       generateMixgbImpute(data, digit, curr_path, type = "survival")
     }

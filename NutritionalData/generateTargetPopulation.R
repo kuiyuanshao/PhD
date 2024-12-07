@@ -1,6 +1,8 @@
 ####### generate HCHS population #######
 pacman::p_load('data.table', 'mvtnorm', 'magrittr', 'dplyr')
 
+setwd("/nesi/project/uoa03789/PhD/SamplingDesigns")
+
 generateNutritionalData <- function(digit){
     n = 4e3
     pop = data.table(id = 1:n)
@@ -9,10 +11,10 @@ generateNutritionalData <- function(digit){
     expit = function(xb){return(exp(xb)/(1+exp(xb)))}
 
     ### Loading data for Multivariate Gaussian ###
-    load('/nesi/project/uoa03789/PhD/SamplingDesigns/NutritionalData/data/multiNorm.RData')
+    load('/NutritionalData/data/multiNorm.RData')
 
     ### Loading parameter estimates to simulate binary variables
-    load('/nesi/project/uoa03789/PhD/SamplingDesigns/NutritionalData/data/logiReg.RData')
+    load('./NutritionalData/data/logiReg.RData')
 
     ### sim_sexbkg: simulate multinomial distribution of sex*background ###
     sim_sexbkg = function(dat, p, sex = c('F','M'), bkg = c('D','PR','O')){
@@ -131,7 +133,7 @@ generateNutritionalData <- function(digit){
     dt.pop <- ls.pop$Data
 
     ### Now loading model coefficients and variance parameter for simulation of true and biomarker intake ###
-    load('/nesi/project/uoa03789/PhD/SamplingDesigns/NutritionalData/data/calibrCoeff.RData')
+    load('./NutritionalData/data/calibrCoeff.RData')
 
     dt.pop$ln_na_true = as.numeric(as.matrix(cbind('Int'=1,subset(dt.pop,select=c('c_ln_na_avg','c_age','c_bmi','female','usborn','high_chol','bkg_pr','bkg_o'))))%*%sodicoeff$Estimate+rnorm(nrow(dt.pop),0,sqrt(var.df$Var.True[1])))
     dt.pop$ln_k_true = as.numeric(as.matrix(cbind('Int'=1,subset(dt.pop,select=c('c_ln_k_avg','c_age','c_bmi','female','usborn','high_chol','bkg_pr','bkg_o'))))%*%potacoeff$Estimate+rnorm(nrow(dt.pop),0,sqrt(var.df$Var.True[2])))
@@ -164,7 +166,7 @@ generateNutritionalData <- function(digit){
     dt.pop$c_ln_protein_bio1 = as.numeric(scale(dt.pop$ln_protein_bio1,scale = F))
 
     ### Now, I will simulate two outcomes (continuous sbp and hypertension2_indicator)
-    load('/nesi/project/uoa03789/PhD/SamplingDesigns/NutritionalData/data/outPar.RData')
+    load('./NutritionalData/data/outPar.RData')
 
     ### Now, simulating hypertension outcome ###
     suboutcome.par = data.frame(Variable = c('Intercept',all.vars(m1.formula[-2])), Estimate = m1.coefficients)
@@ -213,8 +215,8 @@ generateNutritionalData <- function(digit){
     pop[, (vars_to_delete) := NULL]
     
     
-    if(!dir.exists('/nesi/project/uoa03789/PhD/SamplingDesigns/NutritionalData/Output')){system('mkdir /nesi/project/uoa03789/PhD/SamplingDesigns/NutritionalData/Output')}
-    save(pop,file=paste0('/nesi/project/uoa03789/PhD/SamplingDesigns/NutritionalData/Output/NutritionalData_', digit, '.RData'),compress = 'xz')
+    if(!dir.exists('./NutritionalData/Output')){system('mkdir ./NutritionalData/Output')}
+    save(pop,file=paste0('./NutritionalData/Output/NutritionalData_', digit, '.RData'),compress = 'xz')
 }
 
 
