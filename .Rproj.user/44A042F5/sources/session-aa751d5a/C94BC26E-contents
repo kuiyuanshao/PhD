@@ -82,7 +82,7 @@ for (k in 1:n){
   for (i in 1:length(beta.X)){
     set.seed(seed)
     seed <- seed + 1
-    generateGigantiData(beta.X[i], beta.Y[i], gamma.X[i], gamma.Y[i], covXY[i], digit)
+    #generateGigantiData(beta.X[i], beta.Y[i], gamma.X[i], gamma.Y[i], covXY[i], digit)
     load(paste0("./SurvivalData/Output/",
                 beta.X[i], "_", beta.Y[i], "_",
                 gamma.X[i], "_", gamma.Y[i], "_",

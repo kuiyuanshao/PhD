@@ -1,5 +1,6 @@
 library(torch)
 library(progress)
+library(reticulate)
 
 # Function to one-hot encode categorical variables
 one_hot_encode <- function(data, categorical_cols) {
@@ -125,10 +126,10 @@ samplebatches <- function(info_list, batch_size, at_least_p = 0.2, device = "cpu
     phase1 <- ind_phase1[which(cases_phase1 == unicase[case])]
     phase2 <- ind_phase2[which(cases_phase2 == unicase[case])]
     
-    sampphase1 <- sample(phase1, size = n1[case])
-                         #prob = data_norm$data_ori[phase1, data_info$weight_col] / sum(data_norm$data_ori[phase1, data_info$weight_col]))
-    sampphase2 <- sample(phase2, size = n2[case]) 
-                         #prob = data_norm$data_ori[phase2, data_info$weight_col] / sum(data_norm$data_ori[phase2, data_info$weight_col]))
+    sampphase1 <- sample(phase1, size = n1[case], 
+                         prob = data_norm$data_ori[phase1, data_info$weight_col] / sum(data_norm$data_ori[phase1, data_info$weight_col]))
+    sampphase2 <- sample(phase2, size = n2[case], 
+                         prob = data_norm$data_ori[phase2, data_info$weight_col] / sum(data_norm$data_ori[phase2, data_info$weight_col]))
     sampled <- c(sampled, sampphase1, sampphase2)
   }
   #sampphase2 <- sample(ind_phase2, size = as.integer(at_least_p * batch_size), 
@@ -514,6 +515,7 @@ cwgangp <- function(data, m = 5,
       mse_loss <- 0
     }
     ce_loss <- cross_entropy_loss(fake_subsample, true_subsample, encode_result, sampling_info$phase2_cols)
+    print(ce_loss)
     g_loss <- gamma * g_loss + alpha * mse_loss + beta * ce_loss
     
     g_solver$zero_grad()

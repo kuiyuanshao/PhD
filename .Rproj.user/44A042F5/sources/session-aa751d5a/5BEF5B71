@@ -1,0 +1,26 @@
+{
+    "id": "5BEF5B71",
+    "path": "~/GitHub/PhD/debug.R",
+    "project_path": "debug.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1733694288636.0,
+    "source_on_save": false,
+    "relative_order": 1,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "36,0",
+        "scrollLine": "15"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1733695457,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1733695457155,
+    "read_only": false,
+    "read_only_alternatives": []
+}
