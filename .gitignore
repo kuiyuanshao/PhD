@@ -17,6 +17,8 @@
 /data/
 /Output/
 /save/
+/.ipynb_checkpoints/
+/_pycache_/
 
 # Ignore temporary files
 *.tmp
