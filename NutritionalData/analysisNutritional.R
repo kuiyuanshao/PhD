@@ -70,7 +70,7 @@ for (i in 1:n){
   setTxtProgressBar(pb, i)
   digit <- str_pad(i, nchar(4444), pad=0)
   for (j in 1:length(foldernames)){
-    if (!file.exists(paste0("./MECSDI/imputations", 
+    if (!file.exists(paste0("./Diffusion/imputations", 
                             foldernames[j], foldernames[j], "_", digit, ".xlsx"))){
       next
     }
@@ -79,7 +79,7 @@ for (i in 1:n){
     curr_sample <- read.csv(paste0("./NutritionalSample", 
                                    foldernames[j], foldernames[j], "_", digit, ".csv"))
     
-    diff_imp <- read_excel_allsheets(paste0("./MECSDI/imputations", 
+    diff_imp <- read_excel_allsheets(paste0("./Diffusion/imputations", 
                                             foldernames[j], foldernames[j], "_", digit, ".xlsx"))
     imp_coefs_vars.diff <- find_coef_var(imp = diff_imp, sample = curr_sample, type = "diffusion", design = foldernames[j])
     

@@ -158,7 +158,7 @@ for (i in n){
   digit <- str_pad(i, nchar(4444), pad=0)
   for (j in 1:length(foldernames)){
     for (z in 1:length(designnames)){
-      if (!file.exists(paste0("./MECSDI/imputations", 
+      if (!file.exists(paste0("./Diffusion/imputations", 
                               foldernames[j], designnames[z], designnames[z], "_", digit, ".xlsx"))){
         next
       }
@@ -166,7 +166,7 @@ for (i in n){
       curr_sample <- read.csv(paste0("./SurvivalData/SurvivalSample", 
                                      foldernames[j], designnames[z], designnames[z], "_", digit, ".csv"))
       
-      diff_imp <- read_excel_allsheets(paste0("./MECSDI/imputations", 
+      diff_imp <- read_excel_allsheets(paste0("./Diffusion/imputations", 
                                               foldernames[j], designnames[z], designnames[z], "_", digit, ".xlsx"))
       imp_coefs_vars.diff <- find_coef_var(imp = diff_imp, sample = curr_sample, type = "diffusion", design = designnames[z])
       

@@ -53,7 +53,7 @@ for i in range(args.startdigit, args.enddigit + 1):
             json.dump(config, f, indent=4)
         
         
-        path = "/nesi/project/uoa03789/PhD/SamplingDesigns/NutritionalSample" + j + j + "_" + k + ".csv"
+        path = "/nesi/project/uoa03789/PhD/SamplingDesigns/NutritionalData/NutritionalSample" + j + j + "_" + k + ".csv"
         if j in ["/SRS", "/RS", "/WRS", "/SFS", "/ODS_extTail"]:
             batch_loader, dataset = get_dataloader(path = path,
                                                    batch_size = config["train"]["batch_size"],

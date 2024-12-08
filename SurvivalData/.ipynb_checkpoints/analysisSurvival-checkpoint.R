@@ -151,21 +151,22 @@ result_df <- vector("list", n * length(foldernames) * length(designnames))
 m <- 1
 pb <- txtProgressBar(min = 0, max = n, initial = 0) 
 
-source("/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/generateGigantiData.R")
+setwd(dir = "/nesi/project/uoa03789/PhD/SamplingDesigns")
+source("./SurvivalData/generateGigantiData.R")
 for (i in n){
   setTxtProgressBar(pb, i)
   digit <- str_pad(i, nchar(4444), pad=0)
   for (j in 1:length(foldernames)){
     for (z in 1:length(designnames)){
-      if (!file.exists(paste0("/nesi/project/uoa03789/PhD/SamplingDesigns/MECSDI/imputations", 
+      if (!file.exists(paste0("./Diffusion/imputations", 
                               foldernames[j], designnames[z], designnames[z], "_", digit, ".xlsx"))){
         next
       }
-      load(paste0("/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalData/Output", foldernames[j], "/SurvivalData_", digit, ".RData"))
-      curr_sample <- read.csv(paste0("/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalSample", 
+      load(paste0("./SurvivalData/Output", foldernames[j], "/SurvivalData_", digit, ".RData"))
+      curr_sample <- read.csv(paste0("./SurvivalData/SurvivalSample", 
                                      foldernames[j], designnames[z], designnames[z], "_", digit, ".csv"))
       
-      diff_imp <- read_excel_allsheets(paste0("/nesi/project/uoa03789/PhD/SamplingDesigns/MECSDI/imputations", 
+      diff_imp <- read_excel_allsheets(paste0("./Diffusion/imputations", 
                                               foldernames[j], designnames[z], designnames[z], "_", digit, ".xlsx"))
       imp_coefs_vars.diff <- find_coef_var(imp = diff_imp, sample = curr_sample, type = "diffusion", design = designnames[z])
       
@@ -176,10 +177,10 @@ for (i in n){
       curr_sample <- exclude(curr_sample[curr_sample$R == 1, ])
       complete <- coxph(Surv(fu, ade) ~ X, data = curr_sample, y = FALSE)
       
-      load(paste0("/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalSample/MICE", 
+      load(paste0("./SurvivalData/SurvivalSample/MICE", 
                   foldernames[j], designnames[z], "/MICE_IMPUTE_", digit, ".RData"))
       imp_coefs_vars.mice <- find_coef_var(imp = imputed_data_list, sample = curr_sample, type = "mice", design = designnames[z])
-      load(paste0("/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalSample/MIXGB", 
+      load(paste0("./SurvivalData/SurvivalSample/MIXGB", 
                   foldernames[j], designnames[z], "/MIXGB_IMPUTE_", digit, ".RData"))
       imp_coefs_vars.mixgb <- find_coef_var(imp = imputed_data_list, sample = curr_sample, type = "mixgb", design = designnames[z])
       
@@ -209,68 +210,4 @@ for (i in n){
   }
 }
 
-save(result_df, file = "/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalSample/result_imputation.RData")
-
-load("/nesi/project/uoa03789/PhD/SamplingDesigns/SurvivalSample/result_imputation.RData")
-combined_df <- bind_rows(result_df) %>%
-  pivot_longer(
-    cols = 1:10,
-    names_to = c("METHOD", "EST/VAR"),
-    names_pattern = "^(.*)\\.(Est|Var)$"
-  )
-
-combined_df.coefs <- combined_df %>%
-  filter(`EST/VAR` == "Est", TYPE == "RAW")
-true_coefs <- data.frame(DIGIT = combined_df.coefs$DIGIT[combined_df.coefs$METHOD == "TRUE"], 
-                         TRUTH = combined_df.coefs$value[combined_df.coefs$METHOD == "TRUE"])
-
-combined_df.coefs <- combined_df.coefs %>%
-  filter(METHOD != "TRUE") %>%
-  merge(., true_coefs, by = "DIGIT")
-
-rmse <- combined_df.coefs %>% 
-  dplyr::group_by(METHOD, DESIGN) %>% 
-  dplyr::summarize(rmse = sqrt(mean((value - TRUTH)^2)))
-
-#Good Performance experienced a converged training loss at round 0.1, while Bad performance experienced a training loss at 0.14
-ggplot(combined_df %>% filter(`EST/VAR` == "Est", TYPE == "RAW")) + 
-  geom_boxplot(aes(x = factor(METHOD, levels = c("TRUE", "COMPL", "MICE.imp", "MIGXB.imp", "DIFF.imp")), y = value, colour = DESIGN)) + 
-  facet_wrap(~PARAMS, scales = "free") + 
-  theme_minimal() + 
-  labs(x = "Methods", y = "Estimate", colour = "Sampling Designs") + 
-  theme(axis.title.x = element_text(family = "Georgia"),
-        axis.title.y = element_text(family = "Georgia"),
-        axis.text.x = element_text(family = "Georgia"),
-        axis.text.y = element_text(family = "Georgia"),
-        legend.title = element_text(family = "Georgia"),
-        legend.text = element_text(family = "Georgia"),
-        strip.text = element_text(family = "Georgia")) +
-  scale_x_discrete(labels = c("TRUE" = "True",  "COMPL" = "Complete-Case",
-                              "MICE.imp" = "MICE", "MIGXB.imp" = "MIGXB",
-                              "DIFF.imp" = "DIFFUSION")) + 
-  scale_color_brewer(palette = "Dark2")
-
-
-
-ggplot(rmse) + 
-  geom_line(aes(x = as.numeric(factor(DESIGN, levels = c("/SRS", "/RS", "/WRS", "/SFS", 
-                                                         "/ODS_extTail", "/SSRS_exactAlloc", 
-                                                         "/ODS_exactAlloc", "/SFS_exactAlloc"))), 
-                y = rmse, colour = METHOD)) + 
-  theme_minimal() +
-  scale_x_continuous(breaks = 1:8,
-                     labels = c("1" = "/SRS", "2" = "/RS",
-                                "3" = "/WRS", "4" = "/SFS",
-                                "5" = "/ODS_extTail",
-                                "6" = "/SSRS_exactAlloc",
-                                "7" = "/ODS_exactAlloc",
-                                "8" = "/SFS_exactAlloc")) + 
-  labs(x = "Designs", y = "Root Mean Squared Errors", colour = "Methods") + 
-  theme(axis.title.x = element_text(family = "Georgia"),
-        axis.title.y = element_text(family = "Georgia"),
-        axis.text.x = element_text(family = "Georgia"),
-        axis.text.y = element_text(family = "Georgia"),
-        legend.title = element_text(family = "Georgia"),
-        legend.text = element_text(family = "Georgia"),
-        strip.text = element_text(family = "Georgia")) + 
-  scale_color_brewer(palette = "Dark2")
+save(result_df, file = "./SurvivalData/SurvivalSample/result_imputation.RData")
