@@ -78,7 +78,7 @@ generateImpute <- function(generator, m = 5, info_list){
       if (i %in% data_info$numeric_cols){
         pmm_matched <- pmm(sample[data_info$phase2_rows, i], 
                            sample[data_info$phase1_rows, i], 
-                           data[data_info$phase2_rows, i], 10)
+                           data[data_info$phase2_rows, i], 5)
         imputation[data_info$phase1_rows, i] <- pmm_matched
       }
     }
@@ -103,32 +103,34 @@ samplebatches <- function(info_list, batch_size, at_least_p = 0.2, device = "cpu
   #sample a binary variate to case control on in current sample
   curr_col_1 <- sample(phase1_binary_cols, 1)
   curr_col_2 <- sample(phase2_binary_cols, 1)
-  
+
   cases_1 <- data_norm$data[, curr_col_1, drop = F]
   cases_2 <- data_norm$data[, curr_col_2, drop = F]
-  
+
   cases_phase1 <- cases_1[ind_phase1]
   cases_phase2 <- cases_2[ind_phase2]
-  
+
   sampled <- c()
-  
+
   unicase <- unique(cases_phase1)
   n_unicase <- length(unicase)
-  
+
   n1 <- batch_size - as.integer(at_least_p * batch_size)
-  n2 <- as.integer(at_least_p * batch_size) 
-  
+  n2 <- as.integer(at_least_p * batch_size)
+
   n1 <- c(floor(n1 / 2), ceiling(n1 / 2))
   n2 <- c(floor(n2 / 2), ceiling(n2 / 2))
-  
+
   for (case in 1:n_unicase){
     phase1 <- ind_phase1[which(cases_phase1 == unicase[case])]
     phase2 <- ind_phase2[which(cases_phase2 == unicase[case])]
-    
-    sampphase1 <- sample(phase1, size = n1[case])
-                         #prob = data_norm$data_ori[phase1, data_info$weight_col] / sum(data_norm$data_ori[phase1, data_info$weight_col]))
-    sampphase2 <- sample(phase2, size = n2[case]) 
-                         #prob = data_norm$data_ori[phase2, data_info$weight_col] / sum(data_norm$data_ori[phase2, data_info$weight_col]))
+
+    sampphase1 <- sample(phase1, size = n1[case],
+                         prob = data_norm$data_ori[phase1, data_info$weight_col] /
+                           sum(data_norm$data_ori[phase1, data_info$weight_col]))
+    sampphase2 <- sample(phase2, size = n2[case],
+                         prob = data_norm$data_ori[phase2, data_info$weight_col] /
+                           sum(data_norm$data_ori[phase2, data_info$weight_col]))
     sampled <- c(sampled, sampphase1, sampphase2)
   }
   #sampphase2 <- sample(ind_phase2, size = as.integer(at_least_p * batch_size), 
@@ -406,22 +408,22 @@ cwgangp <- function(data, m = 5,
     initialize = function(){
       dim <- nCol - 1
       self$linear1 <- nn_linear(dim, dim)
-      self$linear2 <- nn_linear(dim, dim)
-      self$linear3 <- nn_linear(dim, 1)
+      self$linear2 <- nn_linear(dim, length(data_info$phase2_cols))
+      self$linear3 <- nn_linear(length(data_info$phase2_cols), 1)
       self$leaky1 <- nn_leaky_relu(0.2)
       self$leaky2 <- nn_leaky_relu(0.2)
       self$dropout1 <- nn_dropout(0.5)
       self$dropout2 <- nn_dropout(0.5)
     },
     forward = function(input){
-      input %>% 
+      out <- input %>% 
         self$linear1() %>%
         self$leaky1() %>%
         self$dropout1() %>%
         self$linear2() %>%
         self$leaky2() %>%
-        self$dropout2() %>%
-        self$linear3()
+        self$dropout2()
+      self$linear3(out[, data_info$phase2_cols, drop = F])
     }
   )
   
@@ -449,7 +451,7 @@ cwgangp <- function(data, m = 5,
                     device = device)
   epoch_result <- list()
   p <- 1
-  warm_up <- as.integer(0.1 * n)
+  warm_up <- 0#as.integer(0.1 * n)
   for (i in 1:n){
     d_loss_t <- 0
     if (i < warm_up){
@@ -528,16 +530,17 @@ cwgangp <- function(data, m = 5,
     ))
     Sys.sleep(1 / 10000)
     
-    #if (i %% 100 == 0){
-    #  result <- generateImpute(generator, m = 1, info_list)
-    #  epoch_result[[p]] <- result$sample
-    #  p <- p + 1
-    #}
+    if (i %% 100 == 0){
+      result <- generateImpute(generator, m = 1, info_list)
+      epoch_result[[p]] <- result$sample
+      p <- p + 1
+    }
   }
   
   training_loss <- data.frame(training_loss)
   names(training_loss) <- c("G Loss", "D Loss")
   result <- generateImpute(generator, m = m, info_list)
   
-  return (list(imputation = result$imputation, sample = result$sample, loss = training_loss))
+  return (list(imputation = result$imputation, sample = result$sample, loss = training_loss,
+               epoch_result = epoch_result))
 }
