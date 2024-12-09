@@ -21,12 +21,12 @@ target_variables_2 = c("lastC",
                        "AGE_AT_LAST_VISIT",
                        "ARTage", "OIage", "last.age", 
                        "ade", "fu")
-source("./GANs/cWGAIN-GP.R")
+source("./GANs/cWGAIN-GP_MDN.R")
 
 gain_imp <- cwgangp(data, m = 1, 
-                    params = list(batch_size = 128, gamma = 1, lambda = 10, alpha = 1, beta = 1, 
+                    params = list(batch_size = 128, gamma = 5, lambda = 10, alpha = 1, beta = 5, 
                                   lr_g = 5e-5, lr_d = 1e-6, 
-                                  n = 3000, g_layers = 6, discriminator_steps = 1), 
+                                  n = 5000, g_layers = 4, discriminator_steps = 1), 
                     sampling_info = list(phase1_cols = target_variables_1, 
                                          phase2_cols = target_variables_2, 
                                          weight_col = "W",
@@ -36,13 +36,24 @@ gain_imp <- cwgangp(data, m = 1,
 
 imputed_data_list <- gain_imp$imputation
 generator_output_list <- gain_imp$sample
+loss <- gain_imp$loss
+
 miceimp <- reCalc(imputed_data_list[[1]])
 miceimp_exclude <- exclude(miceimp)
+
 
 imp_mod.1 <- coxph(Surv(fu, ade) ~ X, data = miceimp_exclude, y = FALSE)
 imp_mod.1
 
+
+
 true <- generateUnDiscretizeData(alldata)
+
+ggplot() + 
+  geom_density(aes(x = miceimp$AGE_AT_LAST_VISIT), colour = "red") + 
+  geom_density(aes(x = true$AGE_AT_LAST_VISIT), colour = "blue") +
+  geom_density(aes(x = data$AGE_AT_LAST_VISIT))
+
 ggplot() + 
   geom_density(aes(x = miceimp$fu), colour = "red") + 
   geom_density(aes(x = true$fu), colour = "blue") +
@@ -53,13 +64,18 @@ ggplot() +
   geom_density(aes(x = miceimp$ade), colour = "red") + 
   geom_density(aes(x = true$ade), colour = "blue")
 
+table(miceimp$ade)
+
+
 library(patchwork)
 
 all <- NULL
 for (i in 1:length(gain_imp$epoch_result)){
-  k <- gain_imp$epoch_result[[i]][[1]]
-  k$epoch <- as.character(i * 100)
-  all <- rbind(all, k)
+  
+    k <- gain_imp$epoch_result[[i]][[1]]
+    k$epoch <- as.character(i * 100)
+    all <- rbind(all, k)
+  
 }
 
 ggplot(all) +  
@@ -72,13 +88,14 @@ ggplot(all) +
   geom_density(data = data, aes(x = ade), colour = "black") +
   geom_density(data = true, aes(x = ade), colour = "grey")
 
+ggplot(all) +  
+  geom_density(aes(x = AGE_AT_LAST_VISIT, colour = epoch)) + 
+  geom_density(data = data, aes(x = AGE_AT_LAST_VISIT), colour = "black") +
+  geom_density(data = true, aes(x = AGE_AT_LAST_VISIT), colour = "grey")
 
-ggplot(imputed_data_list[[1]]) +  
-  geom_point(aes(x = fu.star, y = fu)) 
-ggplot(imputed_data_list[[1]]) +  
-  geom_point(aes(x = X, y = fu)) #+ 
-  #facet_wrap(~epoch)
 
 ggplot(generator_output_list[[1]]) +  
-  geom_density(data= true, aes(x = fu.star - fu), colour = "blue")
+  geom_density(aes(x = AGE_AT_LAST_VISIT), colour = "red") + 
+  geom_density(data = data, aes(x = AGE_AT_LAST_VISIT), colour = "black") +
+  geom_density(data = true, aes(x = AGE_AT_LAST_VISIT), colour = "grey")
 

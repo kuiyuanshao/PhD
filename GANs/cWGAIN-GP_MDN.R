@@ -42,7 +42,7 @@ onehot_backtransform <- function(data, binary_indices) {
 }
 
 
-generateImpute <- function(generator, m = 5, info_list){
+generateImpute <- function(generator_mdn, generator_cat, m = 5, info_list){
   list2env(info_list, envir = environment())
   
   imputed_data_list <- list()
@@ -57,8 +57,16 @@ generateImpute <- function(generator, m = 5, info_list){
       M <- batch$M
       
       fakez <- torch_normal(mean = 0, std = 1, size = c(X$size(1), 256))$to(device = device)
-      fakecat <- torch_cat(list(fakez, C), dim = 2)
-      G_sample <- generator(fakecat)
+      fakez <- torch_cat(list(fakez, C), dim = 2)
+      
+      G_sample_mdn <- generator_mdn(fakez)
+      G_sample_cat <- generator_cat(fakez)
+      
+      G_sample_num <- get_sampled_preds(G_sample_mdn[[1]], G_sample_mdn[[2]], 
+                                        G_sample_mdn[[3]], samples = 1)
+      G_sample_num <- G_sample_num$reshape((X[, num_cols, drop = F])$size())
+      
+      G_sample <- torch_cat(list(G_sample_num, G_sample_cat), dim = 2)
       G_sample <- activate_binary_cols(G_sample, encode_result, sampling_info$phase2_cols)
       G_sample <- torch_cat(list(G_sample, C), dim = 2)
       output_tensor[[i]] <- as.matrix(G_sample$detach()$cpu())
@@ -103,28 +111,28 @@ samplebatches <- function(info_list, batch_size, at_least_p = 0.2, device = "cpu
   #sample a binary variate to case control on in current sample
   curr_col_1 <- sample(phase1_binary_cols, 1)
   curr_col_2 <- sample(phase2_binary_cols, 1)
-
+  
   cases_1 <- data_norm$data[, curr_col_1, drop = F]
   cases_2 <- data_norm$data[, curr_col_2, drop = F]
-
+  
   cases_phase1 <- cases_1[ind_phase1]
   cases_phase2 <- cases_2[ind_phase2]
-
+  
   sampled <- c()
-
+  
   unicase <- unique(cases_phase1)
   n_unicase <- length(unicase)
-
+  
   n1 <- batch_size - as.integer(at_least_p * batch_size)
   n2 <- as.integer(at_least_p * batch_size)
-
+  
   n1 <- c(floor(n1 / 2), ceiling(n1 / 2))
   n2 <- c(floor(n2 / 2), ceiling(n2 / 2))
-
+  
   for (case in 1:n_unicase){
     phase1 <- ind_phase1[which(cases_phase1 == unicase[case])]
     phase2 <- ind_phase2[which(cases_phase2 == unicase[case])]
-
+    
     sampphase1 <- sample(phase1, size = n1[case],
                          prob = data_norm$data_ori[phase1, data_info$weight_col] /
                            sum(data_norm$data_ori[phase1, data_info$weight_col]))
@@ -297,6 +305,46 @@ pmm <- function(yhatobs, yhatmis, yobs, k) {
   yobs[idx]
 }
 
+mdn_loss <- function(alpha, sigma, mu, target, eps = 1e-8) {
+  target <- target$unsqueeze(2)$expand_as(mu)
+  sigma <- sigma + eps
+  m <- torch::distr_normal(loc = mu, scale = sigma)
+  
+  log_prob <- m$log_prob(target)
+  log_prob <- log_prob$sum(dim = 3)
+
+  log_alpha <- (alpha + eps)$log()
+
+  loss <- -(log_alpha + log_prob)$logsumexp(dim = 2)
+  return(loss$mean())
+}
+
+get_sample_mode <- function(alpha, mu) {
+  max_component <- alpha$max(dim = 2)[[2]]
+  cond_mode <- mu[torch_arange(alpha$size(1)), max_component]
+  cond_mode
+}
+
+get_sampled_preds <- function(alpha, sigma, mu, samples = 10) {
+  N <- mu$size(1)
+  K <- mu$size(2)
+  T1 <- mu$size(3)
+  sampled_preds <- torch_zeros(N, samples, T1)
+  uniform_samples <- torch_rand(N, samples)
+  cum_alpha <- alpha$cumsum(dim = 2)
+  
+  for (i in seq_len(N)) {
+    for (j in seq_len(samples)) {
+      u <- uniform_samples[i, j]
+      k <- torch_searchsorted(cum_alpha[i, ], u)$item() + 1
+      sampled_preds[i, j, ] <- torch_normal(mean = mu[i, k, ], std = sigma[i, k, ])
+    }
+  }
+  
+  sampled_preds
+}
+
+
 cross_entropy_loss <- function(fake, true, encode_result, phase2_cols){
   cat_phase2 <- encode_result$binary_indices[which(sapply(encode_result$binary_col_names, function(col_names) {
     any(col_names %in% phase2_cols)
@@ -306,8 +354,8 @@ cross_entropy_loss <- function(fake, true, encode_result, phase2_cols){
   i <- 1
   for (cat in cat_phase2){
     loss[[i]] <- nnf_cross_entropy(fake[, cat], 
-                             torch_argmax(true[, cat], dim = 2), 
-                             reduction = "none")
+                                   torch_argmax(true[, cat], dim = 2), 
+                                   reduction = "none")
     i <- i + 1
   }
   loss_t <- torch_stack(loss, dim = 2)$sum() / true$size(1)
@@ -329,12 +377,13 @@ cwgangp <- function(data, m = 5,
                     sampling_info = list(phase1_cols = "X_tilde", phase2_cols = "X", weight_col = "W", 
                                          categorical_cols = c("R", "Z"), outcome_cols = c("Y")), 
                     device = "cpu",
-                    norm_method = "min-max"){
+                    norm_method = "min-max",
+                    num_mixtures = 4){
   list2env(params, envir = environment())
   list2env(sampling_info, envir = environment())
   
   device <- torch_device(device)
-
+  
   encode_result <- one_hot_encode(data, sampling_info$categorical_cols)
   
   nRow <- dim(encode_result$data)[1]
@@ -345,7 +394,10 @@ cwgangp <- function(data, m = 5,
   sampling_info$phase2_cols <- c(phase2_cols[!phase2_cols %in% categorical_cols], unlist(encode_result$binary_col_names[phase2_cols]))
   
   #reordering for concat convenience
-  reordered <- encode_result$data[, c(sampling_info$phase2_cols, 
+  reordered <- encode_result$data[, c(sampling_info$phase2_cols[!sampling_info$phase2_cols %in% 
+                                                                  sampling_info$categorical_cols], 
+                                      sampling_info$phase2_cols[sampling_info$phase2_cols %in% 
+                                                                  sampling_info$categorical_cols],
                                       setdiff(names(encode_result$data), 
                                               c(sampling_info$phase2_cols, 
                                                 sampling_info$weight_col)), 
@@ -368,6 +420,8 @@ cwgangp <- function(data, m = 5,
   phase2_variables[is.na(phase2_variables)] <- 0
   phase2_variables <- torch_tensor(as.matrix(phase2_variables), device = device)
   
+  phase2_n_num <- sum(data_info$phase2_cols %in% data_info$numeric_cols)
+  phase2_n_cat <- sum(!data_info$phase2_cols %in% data_info$numeric_cols)
   
   Residual <- torch::nn_module(
     "Residual",
@@ -385,7 +439,36 @@ cwgangp <- function(data, m = 5,
     }
   )
   
-  generatorM <- torch::nn_module(
+  generatorMDN <- torch::nn_module(
+    "GeneratorMDN",
+    initialize = function(){
+      dim1 <- 256 + nCol - length(data_info$phase2_cols) - 1
+      dim2 <- 64
+      self$seq <- torch::nn_sequential()
+      for (i in 1:g_layers){
+        self$seq$add_module(paste0("Residual_", i), Residual(dim1, dim2))
+        dim1 <- dim1 + dim2
+      }
+      self$seq$add_module("Linear", nn_linear(dim1, phase2_n_num))
+      self$linear.alpha <- nn_linear(phase2_n_num, num_mixtures)
+      self$linear.sigma <- nn_linear(phase2_n_num, num_mixtures * phase2_n_num)
+      self$linear.mu <- nn_linear(phase2_n_num, num_mixtures * phase2_n_num)
+      
+      
+    },
+    
+    forward = function(input){
+      out <- self$seq(input)
+      
+      alpha <- nnf_softmax(self$linear.alpha(out), dim=-1)
+      sigma <- torch_exp(self$linear.sigma(out))$view(list(-1, num_mixtures, phase2_n_num))
+      mu <- self$linear.mu(out)$view(list(-1, num_mixtures, phase2_n_num))
+      
+      return (list(alpha, sigma, mu))
+    }
+  )
+  
+  generatorCat <- torch::nn_module(
     "Generator",
     initialize = function(){
       dim1 <- 256 + nCol - length(data_info$phase2_cols) - 1
@@ -395,7 +478,7 @@ cwgangp <- function(data, m = 5,
         self$seq$add_module(paste0("Residual_", i), Residual(dim1, dim2))
         dim1 <- dim1 + dim2
       }
-      self$seq$add_module("Linear", nn_linear(dim1, length(data_info$phase2_cols)))
+      self$seq$add_module("Linear", nn_linear(dim1, phase2_n_cat))
     },
     forward = function(input){
       out <- self$seq(input)
@@ -407,8 +490,8 @@ cwgangp <- function(data, m = 5,
     "Discriminator",
     initialize = function(){
       dim <- nCol - 1
-      self$linear1 <- nn_linear(dim, dim)
-      self$linear2 <- nn_linear(dim, length(data_info$phase2_cols))
+      self$linear1 <- nn_linear(dim, 64)
+      self$linear2 <- nn_linear(64, length(data_info$phase2_cols))
       self$linear3 <- nn_linear(length(data_info$phase2_cols), 1)
       self$leaky1 <- nn_leaky_relu(0.2)
       self$leaky2 <- nn_leaky_relu(0.2)
@@ -426,11 +509,11 @@ cwgangp <- function(data, m = 5,
       self$linear3(out[, data_info$phase2_cols, drop = F])
     }
   )
-  
-  generator <- generatorM()$to(device = device)
+  generator_mdn <- generatorMDN()$to(device = device)
+  generator_cat <- generatorCat()$to(device = device)
   discriminator <- discriminatorM()$to(device = device)
   
-  g_solver <- torch::optim_adam(generator$parameters, lr = lr_g, betas = c(0.5, 0.9), weight_decay = 1e-6)
+  g_solver <- torch::optim_adam(c(generator_mdn$parameters, generator_cat$parameters), lr = lr_g, betas = c(0.5, 0.9), weight_decay = 1e-6)
   d_solver <- torch::optim_adam(discriminator$parameters, lr = lr_d, betas = c(0.5, 0.9), weight_decay = 1e-6)
   
   training_loss <- matrix(0, nrow = n, ncol = 2)
@@ -439,7 +522,8 @@ cwgangp <- function(data, m = 5,
     format = "Running :what [:bar] :percent eta: :eta | G Loss: :g_loss | D Loss: :d_loss ",
     clear = FALSE, total = n, width = 100)
   
-  mse_cols <- which(data_info$phase2_cols %in% data_info$numeric_cols)
+  num_cols <- which(data_info$phase2_cols %in% data_info$numeric_cols)
+  cat_cols <- which(!data_info$phase2_cols %in% data_info$numeric_cols)
   
   info_list <- list(phase1_variables = phase1_variables, 
                     phase2_variables = phase2_variables,
@@ -447,7 +531,7 @@ cwgangp <- function(data, m = 5,
                     data_norm = data_norm, sampling_info = sampling_info,
                     encode_result = encode_result,
                     method = norm_method, weights = weights,
-                    batch_size = batch_size,
+                    batch_size = batch_size, num_cols = num_cols, cat_cols = cat_cols,
                     device = device)
   epoch_result <- list()
   p <- 1
@@ -465,14 +549,24 @@ cwgangp <- function(data, m = 5,
       C <- batch$C
       M <- batch$M
       fakez <- torch_normal(mean = 0, std = 1, size = c(X$size(1), 256))$to(device = device)
-      fakecat <- torch_cat(list(fakez, C), dim = 2)
-      fake <- generator(fakecat)
+      fakez <- torch_cat(list(fakez, C), dim = 2)
+      
+      fake_mdn <- generator_mdn(fakez)
+      alpha.mdn <- fake_mdn[[1]]
+      sigma.mdn <- fake_mdn[[2]]
+      mu.mdn <- fake_mdn[[3]]
       
       ind_subsample <- (M[, 1] == 1)
-      fake_subsample <- fake[ind_subsample, ]
-      C_subsample <- C[ind_subsample, ]
-      true_subsample <- X[ind_subsample, ]
       
+      fake_subsample_num <- get_sampled_preds(alpha.mdn[ind_subsample, ], sigma.mdn[ind_subsample, ], 
+                                          mu.mdn[ind_subsample, ], samples = 1)
+      fake_subsample_num <- fake_subsample_num$reshape(c(as.numeric(sum(ind_subsample)$detach()$cpu()), length(num_cols)))
+      
+      fake_subsample_cat <- generator_cat(fakez)[ind_subsample, ]
+      
+      true_subsample <- X[ind_subsample, ]
+      C_subsample <- C[ind_subsample, ]
+      fake_subsample <- torch_cat(list(fake_subsample_num, fake_subsample_cat), dim = 2)
       fake_subsample <- activate_binary_cols(fake_subsample, encode_result, sampling_info$phase2_cols)
       
       fakecat_sub <- torch_cat(list(fake_subsample, C_subsample), dim = 2)
@@ -495,28 +589,41 @@ cwgangp <- function(data, m = 5,
     C <- batch$C
     M <- batch$M
     fakez <- torch_normal(mean = 0, std = 1, size = c(X$size(1), 256))$to(device = device)
-    fakecat <- torch_cat(list(fakez, C), dim = 2)
-    fake <- generator(fakecat)
+    fakez <- torch_cat(list(fakez, C), dim = 2)
+    
+    fake_mdn <- generator_mdn(fakez)
+    alpha.mdn <- fake_mdn[[1]]
+    sigma.mdn <- fake_mdn[[2]]
+    mu.mdn <- fake_mdn[[3]]
     
     ind_subsample <- (M[, 1] == 1)
-    fake_subsample <- fake[ind_subsample, ]
-    C_subsample <- C[ind_subsample, ]
-    true_subsample <- X[ind_subsample, ]
     
+    fake_subsample_num <- get_sampled_preds(alpha.mdn[ind_subsample, ], sigma.mdn[ind_subsample, ], 
+                                            mu.mdn[ind_subsample, ], samples = 1)
+    fake_subsample_num <- fake_subsample_num$reshape(c(as.numeric(sum(ind_subsample)$detach()$cpu()), length(num_cols)))
+    
+    fake_subsample_cat <- generator_cat(fakez)[ind_subsample, ]
+    
+    true_subsample <- X[ind_subsample, ]
+    C_subsample <- C[ind_subsample, ]
+    fake_subsample <- torch_cat(list(fake_subsample_num, fake_subsample_cat), dim = 2)
     fake_subsample_act <- activate_binary_cols(fake_subsample, encode_result, sampling_info$phase2_cols)
     
-    fakecat_sub <- torch_cat(list(fake_subsample_act, C_subsample), dim = 2)
+    loss_mdn <- mdn_loss(alpha.mdn[ind_subsample, ], sigma.mdn[ind_subsample, ], 
+                         mu.mdn[ind_subsample, ], true_subsample[, num_cols, drop = F], eps = 1e-8)
     
-    y_fake <- discriminator(fakecat_sub)
+    fake_subsample_act <- torch_cat(list(fake_subsample_act, C_subsample), dim = 2)
+    
+    y_fake <- discriminator(fake_subsample_act)
     g_loss <- -torch_mean(y_fake)
     
-    if (length(mse_cols) > 0){
-      mse_loss <- nnf_mse_loss(fake_subsample[, mse_cols, drop = F], true_subsample[, mse_cols, drop = F])
-    }else{
-      mse_loss <- 0
-    }
+    #if (length(mse_cols) > 0){
+    #  mse_loss <- nnf_mse_loss(fake_subsample[, mse_cols, drop = F], true_subsample[, mse_cols, drop = F])
+    #}else{
+    #  mse_loss <- 0
+    #}
     ce_loss <- cross_entropy_loss(fake_subsample, true_subsample, encode_result, sampling_info$phase2_cols)
-    g_loss <- gamma * g_loss + alpha * mse_loss + beta * ce_loss
+    g_loss <- gamma * g_loss + alpha * loss_mdn + beta * ce_loss
     
     g_solver$zero_grad()
     g_loss$backward()
@@ -531,7 +638,7 @@ cwgangp <- function(data, m = 5,
     Sys.sleep(1 / 10000)
     
     if (i %% 100 == 0){
-      result <- generateImpute(generator, m = 1, info_list)
+      result <- generateImpute(generator_mdn, generator_cat, m = 1, info_list)
       epoch_result[[p]] <- result$sample
       p <- p + 1
     }
@@ -539,7 +646,7 @@ cwgangp <- function(data, m = 5,
   
   training_loss <- data.frame(training_loss)
   names(training_loss) <- c("G Loss", "D Loss")
-  result <- generateImpute(generator, m = m, info_list)
+  result <- generateImpute(generator_mdn, generator_cat, m = m, info_list)
   
   return (list(imputation = result$imputation, sample = result$sample, loss = training_loss,
                epoch_result = epoch_result))
