@@ -262,7 +262,7 @@ ggplot(combined_df.1 %>% filter(DESIGN %in% c("/SRS", "/SSRS_exactAlloc", "/ODS_
   facetted_pos_scales(y = list(TYPE == "Est" ~ scale_y_continuous(limits = c(0, 2.5)),
                                TYPE == "Var" ~ scale_y_continuous(limits = c(0, 0.09))))
 
-ggsave("./NutritionalData/logistic_imputationvsdesign.png", width = 10, height = 10, limitsize = F)
+ggsave("./NutritionalData/Imputation_vs_Design_logistic_boxplot.png", width = 10, height = 10, limitsize = F)
 
 ggplot(combined_df.2 %>% filter(DESIGN %in% c("/SRS", "/SSRS_exactAlloc", "/ODS_exactAlloc", "/RS_exactAlloc", "/WRS_exactAlloc", "/SFS_exactAlloc"))) + 
   geom_boxplot(aes(x = factor(METHOD, levels = c("TRUE", "COMPL", "MICE.imp", "MIGXB.imp", "DIFF.imp", "GANS.imp", "IPW", "RAKING")), 
@@ -289,4 +289,4 @@ ggplot(combined_df.2 %>% filter(DESIGN %in% c("/SRS", "/SSRS_exactAlloc", "/ODS_
   facetted_pos_scales(y = list(TYPE == "Est" ~ scale_y_continuous(limits = c(20, 35)),
                                TYPE == "Var" ~ scale_y_continuous(limits = c(0, 1))))
 
-ggsave("./NutritionalData/gaussian_imputationvsdesign.png", width = 10, height = 10, limitsize = F)
+ggsave("./NutritionalData/Imputation_vs_Design_gaussian_boxplot.png", width = 10, height = 10, limitsize = F)

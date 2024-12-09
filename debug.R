@@ -21,10 +21,10 @@ target_variables_2 = c("lastC",
                        "AGE_AT_LAST_VISIT",
                        "ARTage", "OIage", "last.age", 
                        "ade", "fu")
-source("./GANs/cWGAIN-GP_MDN.R")
+source("./GANs/cWGAIN-GP_residual.R")
 
 gain_imp <- cwgangp(data, m = 1, 
-                    params = list(batch_size = 128, gamma = 5, lambda = 10, alpha = 1, beta = 5, 
+                    params = list(batch_size = 128, gamma = 1, lambda = 10, alpha = 10, beta = 1, 
                                   lr_g = 5e-5, lr_d = 1e-6, 
                                   n = 5000, g_layers = 4, discriminator_steps = 1), 
                     sampling_info = list(phase1_cols = target_variables_1, 
@@ -32,7 +32,7 @@ gain_imp <- cwgangp(data, m = 1,
                                          weight_col = "W",
                                          categorical_cols = categorical_cols), 
                     device = "cpu",
-                    norm_method = "min-max")
+                    norm_method = "maxoffset")
 
 imputed_data_list <- gain_imp$imputation
 generator_output_list <- gain_imp$sample
@@ -63,8 +63,6 @@ ggplot() +
   geom_density(aes(x = data$ade)) + 
   geom_density(aes(x = miceimp$ade), colour = "red") + 
   geom_density(aes(x = true$ade), colour = "blue")
-
-table(miceimp$ade)
 
 
 library(patchwork)
@@ -98,4 +96,5 @@ ggplot(generator_output_list[[1]]) +
   geom_density(aes(x = AGE_AT_LAST_VISIT), colour = "red") + 
   geom_density(data = data, aes(x = AGE_AT_LAST_VISIT), colour = "black") +
   geom_density(data = true, aes(x = AGE_AT_LAST_VISIT), colour = "grey")
+
 
