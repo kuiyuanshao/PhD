@@ -31,7 +31,7 @@ ggplot(combined_df.1) +
                                                                  "/WRS", "/WRS_exactAlloc", "/ODS_extTail", "/ODS_exactAlloc",
                                                                  "/SFS", "/SFS_exactAlloc")))) + 
   geom_hline(data = means.1, aes(yintercept = value), linetype = "dashed", color = "black") + 
-  facet_wrap(~TYPE, scales = "free", ncol = 1,
+  facet_wrap(~TYPE, scales = "free", 
              labeller = labeller(TYPE = c(Est = "Coefficient", Var = "Variance"))) + 
   theme_minimal() + 
   labs(x = "Methods", y = "Estimate", colour = "Sampling Designs") + 
@@ -49,7 +49,7 @@ ggplot(combined_df.1) +
   facetted_pos_scales(y = list(TYPE == "Est" ~ scale_y_continuous(limits = c(0, 2.5)),
                                TYPE == "Var" ~ scale_y_continuous(limits = c(0, 0.09))))
 
-ggsave("./NutritionalData/Imputation_logistic_boxplot.png", width = 10, height = 10, limitsize = F)
+ggsave("Imputation_logistic_boxplot.png")
 
 ggplot(combined_df.2) + 
   geom_boxplot(aes(x = factor(METHOD, levels = c("TRUE", "COMPL", "MICE.imp", "MIGXB.imp", "DIFF.imp", "GANS.imp")), 
@@ -57,7 +57,7 @@ ggplot(combined_df.2) +
                                                                  "/WRS", "/WRS_exactAlloc", "/ODS_extTail", "/ODS_exactAlloc",
                                                                  "/SFS", "/SFS_exactAlloc")))) + 
   geom_hline(data = means.2, aes(yintercept = value), linetype = "dashed", color = "black") + 
-  facet_wrap(~TYPE, scales = "free", ncol = 1,
+  facet_wrap(~TYPE, scales = "free", 
              labeller = labeller(TYPE = c(Est = "Coefficient", Var = "Variance"))) + 
   theme_minimal() + 
   labs(x = "Methods", y = "Estimate", colour = "Sampling Designs") + 
@@ -73,9 +73,9 @@ ggplot(combined_df.2) +
                               "DIFF.imp" = "DIFFUSION", "GANS.imp" = "cWGAN-GP")) + 
   scale_color_brewer(palette = "Paired") + 
   facetted_pos_scales(y = list(TYPE == "Est" ~ scale_y_continuous(limits = c(20, 40)),
-                               TYPE == "Var" ~ scale_y_continuous(limits = c(0, 1))))
+                               TYPE == "Var" ~ scale_y_continuous(limits = c(0.2, 1))))
 
-ggsave("./NutritionalData/Imputation_gaussian_boxplot.png", width = 10, height = 10, limitsize = F)
+ggsave("Imputation_gaussian_boxplot.png")
 
 
 # For Logistic Regression
@@ -130,7 +130,7 @@ ggplot(rmse.1) +
         strip.text = element_text(family = "Georgia")) + 
   scale_color_brewer(palette = "Dark2")
 
-ggsave("./NutritionalData/Imputation_logistic_rmseline.png", width = 10, limitsize = F)
+ggsave("Imputation_logistic_rmseline.png")
 
 ### Plot for Linear Regression
 ggplot(rmse.2) + 
@@ -155,7 +155,7 @@ ggplot(rmse.2) +
         strip.text = element_text(family = "Georgia")) + 
   scale_color_brewer(palette = "Dark2")
 
-ggsave("./NutritionalData/Imputation_gaussian_rmseline.png", width = 10, limitsize = F)
+ggsave("Imputation_gaussian_rmseline.png")
 
 
 # Bias in Complete-case estimator is too large, filtering out.
@@ -182,12 +182,12 @@ ggplot(rmse.2 %>% filter(METHOD != "COMPL")) +
         strip.text = element_text(family = "Georgia")) + 
   scale_color_brewer(palette = "Dark2")
 
-ggsave("./NutritionalData/Imputation_gaussian_rmseline_delcomplete.png", width = 10, limitsize = F)
+ggsave("Imputation_gaussian_rmseline_delcomplete.png")
 
 #### DESIGN-BASED RESULTS vs MODEL-BASED RESULTS
 load("./NutritionalData/NutritionalSample/result_design_based.RData")
 combined_df_design.1 <- bind_rows(result_df.1) %>% 
-  filter(grepl("^c_ln_na_true", rownames(.))) %>%
+  filter(grepl("^c_ln_na_bio1", rownames(.))) %>%
   pivot_longer(
     cols = 1:6,
     names_to = c("METHOD", "TYPE"),
@@ -196,7 +196,7 @@ combined_df_design.1 <- bind_rows(result_df.1) %>%
 combined_df.1 <- rbind(combined_df.1, combined_df_design.1)
 
 combined_df_design.2 <- bind_rows(result_df.2) %>% 
-  filter(grepl("^c_ln_na_true", rownames(.))) %>%
+  filter(grepl("^c_ln_na_bio1", rownames(.))) %>%
   pivot_longer(
     cols = 1:6,
     names_to = c("METHOD", "TYPE"),
@@ -239,10 +239,8 @@ rmse.2 <- rbind(rmse.2, rmse_design.2)
 
 ggplot(combined_df.1 %>% filter(DESIGN %in% c("/SRS", "/SSRS_exactAlloc", "/ODS_exactAlloc", "/RS_exactAlloc", "/WRS_exactAlloc", "/SFS_exactAlloc"))) + 
   geom_boxplot(aes(x = factor(METHOD, levels = c("TRUE", "COMPL", "MICE.imp", "MIGXB.imp", "DIFF.imp", "GANS.imp", "IPW", "RAKING")), 
-                   y = value, colour = factor(DESIGN, levels = c("/SRS", "/SSRS_exactAlloc", "/ODS_exactAlloc", 
-                                                                 "/RS_exactAlloc", "/WRS_exactAlloc", "/SFS_exactAlloc")))) + 
-  geom_hline(data = means.1, aes(yintercept = value), linetype = "dashed", color = "black") + 
-  facet_wrap(~TYPE, scales = "free", ncol = 1,
+                   y = value, colour = DESIGN)) + 
+  facet_wrap(~TYPE, scales = "free", 
              labeller = labeller(TYPE = c(Est = "Coefficient", Var = "Variance"))) + 
   theme_minimal() + 
   labs(x = "Methods", y = "Estimate", colour = "Sampling Designs") + 
@@ -258,18 +256,13 @@ ggplot(combined_df.1 %>% filter(DESIGN %in% c("/SRS", "/SSRS_exactAlloc", "/ODS_
                               "DIFF.imp" = "DIFFUSION", "GANS.imp" = "GANS",
                               "IPW" = "IPW",
                               "RAKING" = "RAKING")) + 
-  scale_color_brewer(palette = "Dark2") +
-  facetted_pos_scales(y = list(TYPE == "Est" ~ scale_y_continuous(limits = c(0, 2.5)),
-                               TYPE == "Var" ~ scale_y_continuous(limits = c(0, 0.09))))
+  scale_color_brewer(palette = "Dark2")
 
-ggsave("./NutritionalData/Imputation_logistic_imputationvsdesign.png", width = 10, height = 10, limitsize = F)
+ggsave("Imputation_logistic_imputationvsdesign.png")
 
 ggplot(combined_df.2 %>% filter(DESIGN %in% c("/SRS", "/SSRS_exactAlloc", "/ODS_exactAlloc", "/RS_exactAlloc", "/WRS_exactAlloc", "/SFS_exactAlloc"))) + 
-  geom_boxplot(aes(x = factor(METHOD, levels = c("TRUE", "COMPL", "MICE.imp", "MIGXB.imp", "DIFF.imp", "GANS.imp", "IPW", "RAKING")), 
-                   y = value, colour = factor(DESIGN, levels = c("/SRS", "/SSRS_exactAlloc", "/ODS_exactAlloc", 
-                                                                 "/RS_exactAlloc", "/WRS_exactAlloc", "/SFS_exactAlloc")))) + 
-  geom_hline(data = means.2, aes(yintercept = value), linetype = "dashed", color = "black") + 
-  facet_wrap(~TYPE, scales = "free", ncol = 1,
+  geom_boxplot(aes(x = factor(METHOD, levels = c("TRUE", "COMPL", "MICE.imp", "MIGXB.imp", "DIFF.imp", "GANS.imp", "IPW", "RAKING")), y = value, colour = DESIGN)) + 
+  facet_wrap(~TYPE, scales = "free", 
              labeller = labeller(TYPE = c(Est = "Coefficient", Var = "Variance"))) + 
   theme_minimal() + 
   labs(x = "Methods", y = "Estimate", colour = "Sampling Designs") + 
@@ -285,8 +278,6 @@ ggplot(combined_df.2 %>% filter(DESIGN %in% c("/SRS", "/SSRS_exactAlloc", "/ODS_
                               "DIFF.imp" = "DIFFUSION", "GANS.imp" = "GANS", 
                               "IPW" = "IPW",
                               "RAKING" = "RAKING")) + 
-  scale_color_brewer(palette = "Dark2") + 
-  facetted_pos_scales(y = list(TYPE == "Est" ~ scale_y_continuous(limits = c(20, 35)),
-                               TYPE == "Var" ~ scale_y_continuous(limits = c(0, 1))))
+  scale_color_brewer(palette = "Dark2")
 
-ggsave("./NutritionalData/Imputation_gaussian_imputationvsdesign.png", width = 10, height = 10, limitsize = F)
+ggsave("Imputation_gaussian_imputationvsdesign.png")
