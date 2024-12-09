@@ -255,14 +255,14 @@ ggplot(combined_df.1 %>% filter(DESIGN %in% c("/SRS", "/SSRS_exactAlloc", "/ODS_
         strip.text = element_text(family = "Georgia")) +
   scale_x_discrete(labels = c("TRUE" = "True",  "COMPL" = "Complete-Case",
                               "MICE.imp" = "MICE", "MIGXB.imp" = "MIGXB",
-                              "DIFF.imp" = "DIFFUSION", "GANS.imp" = "GANS",
+                              "DIFF.imp" = "DIFFUSION", "GANS.imp" = "cWGAN-GP",
                               "IPW" = "IPW",
                               "RAKING" = "RAKING")) + 
   scale_color_brewer(palette = "Dark2") +
   facetted_pos_scales(y = list(TYPE == "Est" ~ scale_y_continuous(limits = c(0, 2.5)),
                                TYPE == "Var" ~ scale_y_continuous(limits = c(0, 0.09))))
 
-ggsave("./NutritionalData/Imputation_logistic_imputationvsdesign.png", width = 10, height = 10, limitsize = F)
+ggsave("./NutritionalData/logistic_imputationvsdesign.png", width = 10, height = 10, limitsize = F)
 
 ggplot(combined_df.2 %>% filter(DESIGN %in% c("/SRS", "/SSRS_exactAlloc", "/ODS_exactAlloc", "/RS_exactAlloc", "/WRS_exactAlloc", "/SFS_exactAlloc"))) + 
   geom_boxplot(aes(x = factor(METHOD, levels = c("TRUE", "COMPL", "MICE.imp", "MIGXB.imp", "DIFF.imp", "GANS.imp", "IPW", "RAKING")), 
@@ -282,11 +282,11 @@ ggplot(combined_df.2 %>% filter(DESIGN %in% c("/SRS", "/SSRS_exactAlloc", "/ODS_
         strip.text = element_text(family = "Georgia")) +
   scale_x_discrete(labels = c("TRUE" = "True",  "COMPL" = "Complete-Case",
                               "MICE.imp" = "MICE", "MIGXB.imp" = "MIGXB",
-                              "DIFF.imp" = "DIFFUSION", "GANS.imp" = "GANS", 
+                              "DIFF.imp" = "DIFFUSION", "GANS.imp" = "cWGAN-GP", 
                               "IPW" = "IPW",
                               "RAKING" = "RAKING")) + 
   scale_color_brewer(palette = "Dark2") + 
   facetted_pos_scales(y = list(TYPE == "Est" ~ scale_y_continuous(limits = c(20, 35)),
                                TYPE == "Var" ~ scale_y_continuous(limits = c(0, 1))))
 
-ggsave("./NutritionalData/Imputation_gaussian_imputationvsdesign.png", width = 10, height = 10, limitsize = F)
+ggsave("./NutritionalData/gaussian_imputationvsdesign.png", width = 10, height = 10, limitsize = F)
