@@ -19,6 +19,7 @@
 /save/
 /.ipynb_checkpoints/
 /_pycache_/
+/.Rproj.user/
 
 # Ignore temporary files
 *.tmp
