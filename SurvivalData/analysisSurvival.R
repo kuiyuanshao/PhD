@@ -7,6 +7,7 @@ read_excel_allsheets <- function(filename, tibble = FALSE) {
   x
 }
 
+
 reCalc <- function(data){
                           # Bound FirstOImonth and FirstARTmonth between 0 and 101
   data <- data %>% mutate(FirstOImonth = round(ifelse(FirstOImonth > 101, 101, FirstOImonth)),

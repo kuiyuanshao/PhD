@@ -78,7 +78,7 @@ generateImpute <- function(generator, m = 5, info_list){
       if (i %in% data_info$numeric_cols){
         pmm_matched <- pmm(sample[data_info$phase2_rows, i], 
                            sample[data_info$phase1_rows, i], 
-                           data[data_info$phase2_rows, i], 5)
+                           data[data_info$phase2_rows, i], 100)
         imputation[data_info$phase1_rows, i] <- pmm_matched
       }
     }
@@ -98,47 +98,47 @@ samplebatches <- function(info_list, batch_size, at_least_p = 0.2, device = "cpu
   ind_phase2 <- data_info$phase2_rows
   
   #Provide a case-control based depending on phase1 and phase2 logical variables
-  phase1_binary_cols <- data_info$phase1_cols[!(data_info$phase1_cols %in% data_info$numeric_cols)]
-  phase2_binary_cols <- data_info$phase2_cols[!(data_info$phase2_cols %in% data_info$numeric_cols)]
-  #sample a binary variate to case control on in current sample
-  curr_col_1 <- sample(phase1_binary_cols, 1)
-  curr_col_2 <- sample(phase2_binary_cols, 1)
+  # phase1_binary_cols <- data_info$phase1_cols[!(data_info$phase1_cols %in% data_info$numeric_cols)]
+  # phase2_binary_cols <- data_info$phase2_cols[!(data_info$phase2_cols %in% data_info$numeric_cols)]
+  # #sample a binary variate to case control on in current sample
+  # curr_col_1 <- sample(phase1_binary_cols, 1)
+  # curr_col_2 <- sample(phase2_binary_cols, 1)
+  # 
+  # cases_1 <- data_norm$data[, curr_col_1, drop = F]
+  # cases_2 <- data_norm$data[, curr_col_2, drop = F]
+  # 
+  # cases_phase1 <- cases_1[ind_phase1]
+  # cases_phase2 <- cases_2[ind_phase2]
+  # 
+  # sampled <- c()
+  # 
+  # unicase <- unique(cases_phase1)
+  # n_unicase <- length(unicase)
+  # 
+  # n1 <- batch_size - as.integer(at_least_p * batch_size)
+  # n2 <- as.integer(at_least_p * batch_size)
+  # 
+  # n1 <- c(floor(n1 / 2), ceiling(n1 / 2))
+  # n2 <- c(floor(n2 / 2), ceiling(n2 / 2))
+  # 
+  # for (case in 1:n_unicase){
+  #   phase1 <- ind_phase1[which(cases_phase1 == unicase[case])]
+  #   phase2 <- ind_phase2[which(cases_phase2 == unicase[case])]
+  # 
+  #   sampphase1 <- sample(phase1, size = n1[case],
+  #                        prob = data_norm$data_ori[phase1, data_info$weight_col] /
+  #                          sum(data_norm$data_ori[phase1, data_info$weight_col]))
+  #   sampphase2 <- sample(phase2, size = n2[case],
+  #                        prob = data_norm$data_ori[phase2, data_info$weight_col] /
+  #                          sum(data_norm$data_ori[phase2, data_info$weight_col]))
+  #   sampled <- c(sampled, sampphase1, sampphase2)
+  # }
+  sampphase2 <- sample(ind_phase2, size = as.integer(at_least_p * batch_size),
+                      prob = data_norm$data_ori[ind_phase2, data_info$weight_col] / sum(data_norm$data_ori[ind_phase2, data_info$weight_col]))
+  sampphase1 <- sample(ind_phase1, size = batch_size - as.integer(at_least_p * batch_size),
+                      prob = data_norm$data_ori[ind_phase1, data_info$weight_col] / sum(data_norm$data_ori[ind_phase1, data_info$weight_col]))
 
-  cases_1 <- data_norm$data[, curr_col_1, drop = F]
-  cases_2 <- data_norm$data[, curr_col_2, drop = F]
-
-  cases_phase1 <- cases_1[ind_phase1]
-  cases_phase2 <- cases_2[ind_phase2]
-
-  sampled <- c()
-
-  unicase <- unique(cases_phase1)
-  n_unicase <- length(unicase)
-
-  n1 <- batch_size - as.integer(at_least_p * batch_size)
-  n2 <- as.integer(at_least_p * batch_size)
-
-  n1 <- c(floor(n1 / 2), ceiling(n1 / 2))
-  n2 <- c(floor(n2 / 2), ceiling(n2 / 2))
-
-  for (case in 1:n_unicase){
-    phase1 <- ind_phase1[which(cases_phase1 == unicase[case])]
-    phase2 <- ind_phase2[which(cases_phase2 == unicase[case])]
-
-    sampphase1 <- sample(phase1, size = n1[case],
-                         prob = data_norm$data_ori[phase1, data_info$weight_col] /
-                           sum(data_norm$data_ori[phase1, data_info$weight_col]))
-    sampphase2 <- sample(phase2, size = n2[case],
-                         prob = data_norm$data_ori[phase2, data_info$weight_col] /
-                           sum(data_norm$data_ori[phase2, data_info$weight_col]))
-    sampled <- c(sampled, sampphase1, sampphase2)
-  }
-  #sampphase2 <- sample(ind_phase2, size = as.integer(at_least_p * batch_size), 
-  #                     prob = data_norm$data_ori[ind_phase2, data_info$weight_col] / sum(data_norm$data_ori[ind_phase2, data_info$weight_col]))
-  #sampphase1 <- sample(ind_phase1, size = batch_size - as.integer(at_least_p * batch_size), 
-  #                     prob = data_norm$data_ori[ind_phase1, data_info$weight_col] / sum(data_norm$data_ori[ind_phase1, data_info$weight_col]))
-  
-  sampled <- sample(sampled)
+  sampled <- sample(c(sampphase2, sampphase1))
   batches <- list(X = phase2_variables[sampled, ],
                   C = phase1_variables[sampled, ],
                   M = data_mask[sampled, ],
@@ -440,6 +440,7 @@ cwgangp <- function(data, m = 5,
     clear = FALSE, total = n, width = 100)
   
   mse_cols <- which(data_info$phase2_cols %in% data_info$numeric_cols)
+  cat_cols <- which(!data_info$phase2_cols %in% data_info$numeric_cols)
   
   info_list <- list(phase1_variables = phase1_variables, 
                     phase2_variables = phase2_variables,
@@ -515,7 +516,13 @@ cwgangp <- function(data, m = 5,
     }else{
       mse_loss <- 0
     }
-    ce_loss <- cross_entropy_loss(fake_subsample, true_subsample, encode_result, sampling_info$phase2_cols)
+    if (length(cat_cols) > 0){
+      ce_loss <- cross_entropy_loss(fake_subsample, true_subsample, encode_result, sampling_info$phase2_cols)
+    }else{
+      ce_loss <- 0
+    }
+    
+    #ce_loss <- cross_entropy_loss(fake_subsample, true_subsample, encode_result, sampling_info$phase2_cols)
     g_loss <- gamma * g_loss + alpha * mse_loss + beta * ce_loss
     
     g_solver$zero_grad()

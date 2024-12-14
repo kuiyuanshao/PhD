@@ -481,7 +481,7 @@ cwgangp <- function(data, m = 5,
       fakez <- torch_normal(mean = 0, std = 1, size = c(X$size(1), 256))$to(device = device)
       fakecat <- torch_cat(list(fakez, C), dim = 2)
       fake <- generator(fakecat)
-      fake[, mse_cols] <- C[, mse_cols] - fake[, mse_cols]
+      
       ind_subsample <- (M[, 1] == 1)
       fake_subsample <- fake[ind_subsample, ]
       C_subsample <- C[ind_subsample, ]
@@ -518,7 +518,6 @@ cwgangp <- function(data, m = 5,
     true_subsample <- X[ind_subsample, ]
     
     fake_subsample_act <- activate_binary_cols(fake_subsample, encode_result, sampling_info$phase2_cols)
-    fake_subsample_act[, mse_cols] <- C_subsample[, mse_cols] - fake_subsample_act[, mse_cols]
     fakecat_sub <- torch_cat(list(fake_subsample_act, C_subsample), dim = 2)
     
     y_fake <- discriminator(fakecat_sub)

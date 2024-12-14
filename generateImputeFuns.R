@@ -75,7 +75,7 @@ generateMixgbImpute <- function(data, digit, path, type){
     cleandata <- data_clean(data)
     params <- list(max_depth = 3, subsample = 0.7)
     cv_results <- mixgb_cv(data = cleandata, nrounds = 100, xgb.params = params, verbose = FALSE)
-    imputed_data_list <- mixgb(cleandata, m = 20, maxit = 25, nrounds = cv_results$best.nrounds, xgb.params = params)
+    imputed_data_list <- mixgb(cleandata, m = 20, maxit = 25, pmm.type = "auto", nrounds = cv_results$best.nrounds, xgb.params = params)
     save(imputed_data_list, cv_results, file = paste0(path, '/MIXGB_IMPUTE_', digit, '.RData'), compress = 'xz')
   }
 }
