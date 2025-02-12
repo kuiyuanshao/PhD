@@ -1,5 +1,5 @@
 mice.impute.pmm <- function (y, ry, x, wy = NULL, donors = 5L, matchtype = 1L, 
-          ridge = 1e-05, use.matcher = FALSE, ...) 
+                             ridge = 1e-05, use.matcher = FALSE, ...) 
 {
   {
     if (is.null(wy)) {
@@ -51,13 +51,14 @@ retrieve <- function(data, var, predM, ry, wy, ls.meth, ridge = 1e-5){
     pen <- diag(xtx) * ridge
     v <- solve(xtx + diag(pen))
     v <- (v + t(v)) / 2
+    
     #finding the residual variance via a random drawing from a posterior distribution
     sigma.star <- sqrt(sum((r)^2) / rchisq(1, df))
     random.component <- (chol(v) %*% rnorm(ncol(x))) * sigma.star
-    beta.star <- c + random.component[order(qr$qr$pivot), ]
-    
+
     c[is.na(c)] <- 0
-    beta.star[is.na(beta.star)] <- 0
+    
+    beta.star <- c + random.component[order(qr$qr$pivot), ]
     
     yhatobs <- x[ry, , drop = FALSE] %*% c
     yhatmis <- x[wy, , drop = FALSE] %*% beta.star
@@ -67,20 +68,20 @@ retrieve <- function(data, var, predM, ry, wy, ls.meth, ridge = 1e-5){
                    qr = qr)
     return (result)
   }else if (ls.meth == "ridge"){
-    xtx <- crossprod(x)
+    xtx <- crossprod(x[ry, ])
     pen <- ridge * diag(xtx)
     v <- solve(xtx + diag(pen))
-    c <- t(y) %*% x %*% v
+    c <- t(ynum[ry]) %*% x[ry, ] %*% v
     r <- ynum[ry] - x[ry, ] %*% t(c)
     sigma.star <- sqrt(sum((r)^2) / rchisq(1, df))
     v <- (v + t(v)) / 2
-    beta.star <- c + (t(chol(v)) %*% rnorm(ncol(x))) * sigma.star
+    beta.star <- c + t((t(chol(v)) %*% rnorm(ncol(x))) * sigma.star)
     
     c[is.na(c)] <- 0
-    beta[is.na(beta)] <- 0
+    beta.star[is.na(beta.star)] <- 0
     
-    yhatobs <- x[ry, , drop = FALSE] %*% c
-    yhatmis <- x[wy, , drop = FALSE] %*% beta
+    yhatobs <- x[ry, , drop = FALSE] %*% t(c)
+    yhatmis <- x[wy, , drop = FALSE] %*% t(beta.star)
     ypmmmis <- pmm(yhatobs, yhatmis, ynum[ry], 5)
     result <- list(coef = c, beta = beta.star, resvar = sigma.star, xtxinv = v, 
                    yhatobs = yhatobs, yhatmis = yhatmis, ypmmmis = ypmmmis)

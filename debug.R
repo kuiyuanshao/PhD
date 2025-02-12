@@ -49,7 +49,7 @@ data$R <- NULL
 data_init2$R <- NULL
 
 
-pmm_obj.1 <- mice(data, m = 1, print = FALSE, maxit = 5,
+pmm_obj.1 <- mice(data, m = 1, print = FALSE, maxit = 1,
                   maxcor = 1.0001, #ls.meth = "ridge", ridge = 0.1,
                   remove.collinear = F, matchtype = 1L, 
                   visitSequence = c("lastC", "AGE_AT_LAST_VISIT", "last.age",
@@ -57,6 +57,10 @@ pmm_obj.1 <- mice(data, m = 1, print = FALSE, maxit = 5,
                                     "ade", "fu"),
                   #predictorMatrix = quickpred(data),
                   method = "pmm")
+pmm_res <- complete(pmm_obj.1, 1)
+imp_mod.1 <- coxph(Surv(fu, ade) ~ X, data = pmm_res, y = FALSE)
+
+
 
 predM <- pmm_obj.1$predictorMatrix
 visitSeq <- c("lastC", "AGE_AT_LAST_VISIT", "last.age",
@@ -65,71 +69,109 @@ visitSeq <- c("lastC", "AGE_AT_LAST_VISIT", "last.age",
 ry <- R == 1
 wy <- R == 0
 
-result <- retrieve(data_init2, "lastC", predM, ry, wy, ls.meth = "qr", ridge = 1e-5)
-data_init2[["lastC"]][wy] <- result$ypmmmis
-
-result <- retrieve(data_init2, "AGE_AT_LAST_VISIT", 
-                   predM, ry, wy, ls.meth = "qr", ridge = 1e-5)
-data_init2[["AGE_AT_LAST_VISIT"]][wy] <- result$ypmmmis
-
-result <- retrieve(data_init2, "last.age", 
-                   predM, ry, wy, ls.meth = "qr", ridge = 1e-5)
-data_init2[["last.age"]][wy] <- result$ypmmmis
-
-result <- retrieve(data_init2, "FirstARTmonth", 
-                   predM, ry, wy, ls.meth = "qr", ridge = 1e-5)
-data_init2[["FirstARTmonth"]][wy] <- result$ypmmmis
-
-result <- retrieve(data_init2, "ARTage", 
-                   predM, ry, wy, ls.meth = "qr", ridge = 1e-5)
-data_init2[["ARTage"]][wy] <- result$ypmmmis
-
-result <- retrieve(data_init2, "FirstOImonth", 
-                   predM, ry, wy, ls.meth = "qr", ridge = 1e-5)
-data_init2[["FirstOImonth"]][wy] <- result$ypmmmis
-
-result <- retrieve(data_init2, "OIage", 
-                   predM, ry, wy, ls.meth = "qr", ridge = 1e-5)
-data_init2[["OIage"]][wy] <- result$ypmmmis
-
-result <- retrieve(data_init2, "ade", 
-                   predM, ry, wy, ls.meth = "qr", ridge = 1e-5)
-data_init2[["ade"]][wy] <- result$ypmmmis
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-visitSeq <- c("lastC", "AGE_AT_LAST_VISIT", "last.age",
-              "FirstARTmonth", "ARTage", "FirstOImonth", "OIage",
-              "ade", "fu")
-plot_list <- list()
-n_cols <- length(visitSeq)
-for (j in 1:5){
-  plot_list_iter <- list()
-  k <- 1
-  for (i in ((j - 1) * n_cols + 1):(j * n_cols)) {
-    yhat_data <- data.frame(value = yhatmis_list[, i])
-    ymatch_data <- data.frame(value = ymatch_list[, i])
-    true_data <- data.frame(value = true[[visitSeq[k]]])
-    plot_list_iter[[k]] <- ggplot() +
-      geom_density(data = yhat_data, aes(x = value), colour = "red") +
-      geom_density(data = ymatch_data, aes(x = value), colour = "blue") +
-      geom_density(data = true_data, aes(x = value)) +
-      ggtitle(visitSeq[k])
-    k <- k + 1
+coef_result <- vector("list", 9)
+beta_result <- vector("list", 9)
+obs_result <- vector("list", 9)
+mis_result <- vector("list", 9)
+pmm_result <- vector("list", 9)
+for (k in 1:5){
+  for (var in 1:length(visitSeq)){
+    result <- retrieve(data_init2, visitSeq[var], predM, ry, wy, ls.meth = "qr", ridge = 1e-5)
+    data_init2[[visitSeq[var]]][wy] <- result$ypmmmis
+    coef_result[[var]] <- rbind(coef_result[[var]], result$coef)
+    beta_result[[var]] <- rbind(beta_result[[var]], result$beta)
+    obs_result[[var]] <- cbind(obs_result[[var]], result$yhatobs)
+    mis_result[[var]] <- cbind(mis_result[[var]], result$yhatmis)
+    pmm_result[[var]] <- cbind(pmm_result[[var]], result$ypmmmis)
   }
-  plot_list[[j]] <- wrap_plots(plot_list_iter, ncol = 3)
 }
 
-plot_list[[1]]
+p <- ggplot() 
+for (i in 1:5){
+  dataf <- data.frame(X = pmm_result[[1]][, i])
+  p <- p + 
+    geom_density(data = dataf, aes(x = X), colour = i)
+}
+
+p
+
+lm(paste0("AGE_AT_LAST_VISIT ~ ", paste0(colnames(coef_result[[2]]), collapse = "+")), data = data)
+
+
+library(xgboost)
+obs.y <- data_init2[!(R == 0), "FirstOImonth"]
+obs.data <- data_init2[!(R == 0), -which(names(data) == "FirstOImonth"), drop = FALSE]
+mis.data <- data_init2[R == 0, -which(names(data) == "FirstOImonth"), drop = FALSE]
+
+dobs <- xgb.DMatrix(data = as.matrix(obs.data), label = obs.y, nthread = 3)
+dmis <- xgb.DMatrix(data = as.matrix(mis.data), nthread = 3)
+  
+  
+obj.type <- "reg:squarederror"
+params <- list(max_depth = 6, subsample = 0.7, eta = 0.3)
+xgb.fit <- xgb.train(
+  data = dobs, objective = obj.type, 
+  params = params, nrounds = 30)
+
+
+library(DiagrammeR)
+library(caret)
+obs.y <- data_init2[!(R == 0), "FirstOImonth"]
+obs.data <- data_init2[!(R == 0), -which(names(data_init2) == "FirstOImonth"), drop = FALSE]
+mis.data <- data_init2[R == 0, -which(names(data_init2) == "FirstOImonth"), drop = FALSE]
+obs.data <- as.data.frame(obs.data)
+train_control <- trainControl(
+  method = "none", 
+  allowParallel = TRUE
+)
+
+tune_grid <- expand.grid(
+  nrounds = 30, 
+  max_depth = 6,    
+  eta = 0.3, 
+  gamma = 0,         
+  colsample_bytree = 1,
+  min_child_weight = 1,
+  subsample = 0.7 
+)
+xgb.fit <- train(
+  x = obs.data,
+  y = obs.y,
+  method = "xgbTree",
+  trControl = train_control,
+  tuneGrid = tune_grid
+)
+
+xgb.plot.tree(model = xgb.fit$finalModel, trees = 4)
+
+yhatmis <- predict(xgb.fit, dmis)
+
+
+
+# Nutrition:
+
+data <- read.csv("./NutritionalData/NutritionalSample/SRS/SRS_0001.csv")
+pmm_obj.1 <- mice(data, m = 1, print = FALSE, maxit = 25,
+                  maxcor = 1.0001, #ls.meth = "ridge", ridge = 0.1,
+                  remove.collinear = F, matchtype = 1L,
+                  #predictorMatrix = quickpred(data),
+                  method = "pmm")
+pmm_res <- complete(pmm_obj.1, 1)
+
+
+
+# Keep putting the random component in, even there is na.
+# Assign nas to zeros first.
+# Impute the expected values of the truth|measured
+### 1. Two observations different calibration predicted values, 
+        #different starting values, but pmm will just have one.
+# Sample from stratum.
+# A Simple Regression. X|X^*
+
+# Often, they will have a set of variables they want, 
+# And these can be new information that not observed before (clinical notes).
+
+
+
+
 
