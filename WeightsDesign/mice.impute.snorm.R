@@ -2,7 +2,7 @@ mice.impute.snorm <- function(y, ry, x, wy = NULL,
                                 ridge = 1e-05, use.matcher = FALSE, ...) {
   args <- list(...)
   strata <- args$strata
-  
+  pmm <- args$pmm
   
   {
     if (is.null(wy)) {
@@ -61,8 +61,16 @@ mice.impute.snorm <- function(y, ry, x, wy = NULL,
     beta.star <- as.vector(t(c_coef)) + as.vector(r_c)
     
     x_missing <- curr_x[curr_wy, , drop = FALSE]
-    imputed_values <- as.vector(x_missing %*% beta.star + rnorm(sum(curr_wy)) * sigma.star)
-    imputed[idx[curr_wy]] <- imputed_values
+    
+    if (pmm){
+      yhatobs <- x_obs %*% as.vector(t(c_coef))
+      yhatmis <- x_missing %*% beta.star
+      idxx <- matchindex(yhatobs, yhatmis, 5)
+      imputed[idx[curr_wy]] <- y_obs[idxx]
+    }else{
+      imputed_values <- as.vector(x_missing %*% beta.star + rnorm(sum(curr_wy)) * sigma.star)
+      imputed[idx[curr_wy]] <- imputed_values
+    }
   }
   
   imputed[wy]

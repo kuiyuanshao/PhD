@@ -47,10 +47,11 @@ class CSDI_base(nn.Module):
         rand_for_mask = torch.rand_like(observed_mask) * observed_mask
         rand_for_mask = rand_for_mask.reshape(len(rand_for_mask), -1)
         for i in range(len(observed_mask)):
-            sample_ratio = 0.8
-            num_observed = observed_mask[i].sum().item()
-            num_masked = round(num_observed * sample_ratio)
-            rand_for_mask[i][rand_for_mask[i].topk(num_masked).indices] = -1
+            if (i in self.phase2_cols):
+                sample_ratio = 0.8
+                num_observed = observed_mask[i].sum().item()
+                num_masked = round(num_observed * sample_ratio)
+                rand_for_mask[i][rand_for_mask[i].topk(num_masked).indices] = -1
         cond_mask = (rand_for_mask > 0).reshape(observed_mask.shape).float()
         return cond_mask
 

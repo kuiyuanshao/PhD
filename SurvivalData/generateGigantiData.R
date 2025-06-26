@@ -3,7 +3,7 @@ pacman::p_load('dplyr', 'plyr','stringr', 'mvtnorm','MASS','data.table', 'sampli
 generateGigantiData <- function(beta.X = -1, beta.Y = 0.25,
                                 gamma.X = -2, gamma.Y = 0.5,
                                 covXY = 0.25, digit = "0001"){
-  n<-4000
+  n <- 4000
   beta.unval<-c(-7,-0.02,0,0,6.5)
   gamma.unval<-c(-8,-0.02,-0,0,5,0.5)
   beta<-c(-5,-0.02,beta.X,beta.Y,0,5,0.5,0)

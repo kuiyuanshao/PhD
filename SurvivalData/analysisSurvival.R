@@ -146,30 +146,35 @@ foldernames <- c("/-1_0_-2_0_-0.25", "/-1_0_-2_0_0", "/-1_0_-2_0_0.25",
                  "/-1_0.25_-2_0.5_-0.25", "/-1_0.25_-2_0.5_0", "/-1_0.25_-2_0.5_0.25",
                  "/-1_0.5_-2_1_-0.25", "/-1_0.5_-2_1_0", "/-1_0.5_-2_1_0.25",
                  "/-1_1_-2_2_-0.25", "/-1_1_-2_2_0", "/-1_1_-2_2_0.25")
-designnames <- c("/SRS", "/BLS")
+designnames <- c("/SRS")#, "/BLS")
 n <- 100
 result_df <- vector("list", n * length(foldernames) * length(designnames))
 m <- 1
 pb <- txtProgressBar(min = 0, max = n, initial = 0) 
 
-source("./SurvivalData/generateGigantiData.R")
-for (i in n){
+source("../SurvivalData/generateGigantiData.R")
+for (i in 1:n){
   setTxtProgressBar(pb, i)
   digit <- str_pad(i, nchar(4444), pad=0)
+  cat("No:", digit)
   for (j in 1:length(foldernames)){
     for (z in 1:length(designnames)){
-      if (!file.exists(paste0("./Diffusion/imputations", 
-                              foldernames[j], designnames[z], designnames[z], "_", digit, ".xlsx"))){
+      # if (!file.exists(paste0("./Diffusion/imputations", 
+      #                         foldernames[j], designnames[z], designnames[z], "_", digit, ".xlsx"))){
+      #   next
+      # }
+      if (!file.exists(paste0("./SurvivalSample/GANs", 
+                              foldernames[j], designnames[z], "/GANs_IMPUTE_", digit, ".RData"))){
         next
       }
-      load(paste0("./SurvivalData/Output", foldernames[j], "/SurvivalData_", digit, ".RData"))
-      curr_sample <- read.csv(paste0("./SurvivalData/SurvivalSample", 
+      load(paste0("../SurvivalData/Output", foldernames[j], "/SurvivalData_", digit, ".RData"))
+      curr_sample <- read.csv(paste0("../SurvivalData/SurvivalSample", 
                                      foldernames[j], designnames[z], designnames[z], "_", digit, ".csv"))
       
-      diff_imp <- read_excel_allsheets(paste0("./Diffusion/imputations", 
-                                              foldernames[j], designnames[z], designnames[z], "_", digit, ".xlsx"))
-      imp_coefs_vars.diff <- find_coef_var(imp = diff_imp, sample = curr_sample, type = "diffusion", design = designnames[z])
-      
+      # diff_imp <- read_excel_allsheets(paste0("./Diffusion/imputations", 
+      #                                         foldernames[j], designnames[z], designnames[z], "_", digit, ".xlsx"))
+      # imp_coefs_vars.diff <- find_coef_var(imp = diff_imp, sample = curr_sample, type = "diffusion", design = designnames[z])
+      # 
       truth <- generateUnDiscretizeData(alldata)
       truth <- exclude(truth)
       true <- coxph(Surv(fu, ade) ~ X, data = truth, y = FALSE)
@@ -177,30 +182,37 @@ for (i in n){
       curr_sample <- exclude(curr_sample[curr_sample$R == 1, ])
       complete <- coxph(Surv(fu, ade) ~ X, data = curr_sample, y = FALSE)
       
-      load(paste0("./SurvivalData/SurvivalSample/MICE", 
+      load(paste0("../SurvivalData/SurvivalSample/MICE", 
                   foldernames[j], designnames[z], "/MICE_IMPUTE_", digit, ".RData"))
       imp_coefs_vars.mice <- find_coef_var(imp = imputed_data_list, sample = curr_sample, type = "mice", design = designnames[z])
-      load(paste0("./SurvivalData/SurvivalSample/MIXGB", 
-                  foldernames[j], designnames[z], "/MIXGB_IMPUTE_", digit, ".RData"))
-      imp_coefs_vars.mixgb <- find_coef_var(imp = imputed_data_list, sample = curr_sample, type = "mixgb", design = designnames[z])
+      # load(paste0("./SurvivalData/SurvivalSample/MIXGB", 
+      #             foldernames[j], designnames[z], "/MIXGB_IMPUTE_", digit, ".RData"))
+      # imp_coefs_vars.mixgb <- find_coef_var(imp = imputed_data_list, sample = curr_sample, type = "mixgb", design = designnames[z])
       
-      curr_res <- data.frame(TRUE.Est = rep(true$coef['X'], 7),
-                             COMPL.Est = rep(complete$coef['X'], 7),
+      load(paste0("../SurvivalData/SurvivalSample/GANs", 
+                  foldernames[j], designnames[z], "/GANs_IMPUTE_", digit, ".RData"))
+      imp_coefs_vars.gans <- find_coef_var(imp = gain_imp$imputation, sample = curr_sample, type = "gans", design = designnames[z])
+      
+      curr_res <- data.frame(TRUE.Est = true$coef['X'],
+                             COMPL.Est = complete$coef['X'],
                              MICE.imp.Est = imp_coefs_vars.mice$coef, 
-                             MIGXB.imp.Est = imp_coefs_vars.mixgb$coef, 
-                             DIFF.imp.Est = imp_coefs_vars.diff$coef,
+                             #MIGXB.imp.Est = imp_coefs_vars.mixgb$coef, 
+                             #DIFF.imp.Est = imp_coefs_vars.diff$coef,
+                             GANs.imp.Est = imp_coefs_vars.gans$coef, 
                                
-                             TRUE.Var = rep(diag(vcov(true))['X'], 7),
-                             COMPL.Var = rep(diag(vcov(complete))['X'], 7),
+                             TRUE.Var = diag(vcov(true))['X'],
+                             COMPL.Var = diag(vcov(complete))['X'],
                              MICE.imp.Var = imp_coefs_vars.mice$var, 
-                             MIGXB.imp.Var = imp_coefs_vars.mixgb$var, 
-                             DIFF.imp.Var = imp_coefs_vars.diff$var,
+                             #MIGXB.imp.Var = imp_coefs_vars.mixgb$var, 
+                             #DIFF.imp.Var = imp_coefs_vars.diff$var,
+                             GANs.imp.Var = imp_coefs_vars.gans$var, 
                              
+                             TRUE.Inc = nrow(truth), 
                              MICE.Inc = imp_coefs_vars.mice$inclusion,
-                             MIGXB.Inc = imp_coefs_vars.mixgb$inclusion,
-                             DIFF.Inc = imp_coefs_vars.diff$inclusion,
+                             #MIGXB.Inc = imp_coefs_vars.mixgb$inclusion,
+                             #DIFF.Inc = imp_coefs_vars.diff$inclusion,
+                             GANs.Inc = imp_coefs_vars.gans$inclusion,
                                
-                             TYPE = c("RAW", paste0("ST", 1:6)),
                              PARAMS = foldernames[j],
                              DESIGN = designnames[z],
                              DIGIT = digit)
@@ -210,4 +222,4 @@ for (i in n){
   }
 }
 
-save(result_df, file = "./SurvivalData/SurvivalSample/result_imputation.RData")
+save(result_df, file = "../SurvivalData/SurvivalSample/result_imputation.RData")

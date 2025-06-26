@@ -9,29 +9,30 @@ foldernames <- c("/-1_0_-2_0_-0.25", "/-1_0_-2_0_0", "/-1_0_-2_0_0.25",
                  "/-1_0.5_-2_1_-0.25", "/-1_0.5_-2_1_0", "/-1_0.5_-2_1_0.25",
                  "/-1_1_-2_2_-0.25", "/-1_1_-2_2_0", "/-1_1_-2_2_0.25")
 foldernames <- foldernames[task_id]
-designnames <- c("/SRS", "/BLS")
+designnames <- c("/SRS")
 
-source("./SurvivalData/generateImputeFuns.R")
+source("../generateImputeFuns.R")
 n <- 100
 pb <- txtProgressBar(min = 0, max = n, initial = 0)
-if(!dir.exists('./SurvivalData/SurvivalSample/MICE')){system('mkdir ./SurvivalData/SurvivalSample/MICE')}
-if(!dir.exists('./SurvivalData/SurvivalSample/MIXGB')){system('mkdir ./SurvivalData/SurvivalSample/MIXGB')}
-if(!dir.exists('./SurvivalData/SurvivalSample/GANs')){system('mkdir ./SurvivalData/SurvivalSample/GANs')}
-if(!dir.exists('./SurvivalData/SurvivalSample/cycleGANs')){system('mkdir ./SurvivalData/SurvivalSample/cycleGANs')}
+if(!dir.exists('./SurvivalSample/MICE')){system('mkdir ./SurvivalSample/MICE')}
+if(!dir.exists('./SurvivalSample/GANs')){system('mkdir ./SurvivalSample/GANs')}
 for (j in foldernames){
   cat("Beta:", j, "\n")
-  for (i in n){
+  for (i in 1:n){
     cat("Iteration:", i, "\n")
     digit <- str_pad(i, nchar(4444), pad=0)
     for (z in designnames){
-      data <- read.csv(paste0("./SurvivalData/SurvivalSample", j, z, z, "_", digit, ".csv"))
-      curr_path <- paste0('./SurvivalData/SurvivalSample/MICE', j, z)
+      data <- read.csv(paste0("./SurvivalSample", j, z, z, "_", digit, ".csv"))
+      curr_path <- paste0('./SurvivalSample/MICE', j, z)
       if(!dir.exists(curr_path)){dir.create(curr_path, recursive = T)}
       generateMiceImpute(data, digit, curr_path, type = "survival")
 
-      curr_path <- paste0('./SurvivalData/SurvivalSample/MIXGB', j, z)
+      # curr_path <- paste0('./SurvivalSample/MIXGB', j, z)
+      # if(!dir.exists(curr_path)){dir.create(curr_path, recursive = T)}
+      # generateMixgbImpute(data, digit, curr_path, type = "survival")
+      curr_path <- paste0('./SurvivalSample/GANs', j, z)
       if(!dir.exists(curr_path)){dir.create(curr_path, recursive = T)}
-      generateMixgbImpute(data, digit, curr_path, type = "survival")
+      generateGansImpute(data, digit, curr_path, design = z, type = "survival")
     }
   }
 }

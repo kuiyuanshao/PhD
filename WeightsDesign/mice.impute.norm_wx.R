@@ -1,7 +1,8 @@
-mice.impute.wnorm_x <- function(y, ry, x, wy = NULL, 
-                                     ridge = 1e-05, use.matcher = FALSE, ...) {
+mice.impute.norm_wx <- function(y, ry, x, wy = NULL, 
+                                ridge = 1e-05, use.matcher = FALSE, ...) {
   args <- list(...)
   w <- args$weights
+  pmm <- args$pmm
   
   {
     if (is.null(wy)) {
@@ -14,14 +15,14 @@ mice.impute.wnorm_x <- function(y, ry, x, wy = NULL,
     ynum <- as.integer(y)
   }
   
-  xtwx <- t(x[ry, , drop = FALSE]) %*% (x[ry, , drop = FALSE] * w[ry])
-  xtwy <- t(ynum[ry] * w[ry]) %*% (x[ry, , drop = FALSE])
-  pen <- ridge * diag(xtwx)
+  xtx <- t(x[ry, , drop = FALSE]) %*% (x[ry, , drop = FALSE])
+  xty <- t(ynum[ry]) %*% (x[ry, , drop = FALSE])
+  pen <- ridge * diag(xtx)
   if (length(pen) == 1) {
     pen <- matrix(pen)
   }
-  v <- solve(xtwx + diag(pen))
-  c <- xtwy %*% v
+  v <- solve(xtx + diag(pen))
+  c <- xty %*% v
   r <- ynum[ry] - x[ry, , drop = FALSE] %*% t(c)
   
   df <- max(length(ynum[ry]) - ncol(x[ry, , drop = FALSE]), 1)
@@ -37,5 +38,13 @@ mice.impute.wnorm_x <- function(y, ry, x, wy = NULL,
   
   c <- t(c)
   beta.star <- c + r.c
-  x[wy, ] %*% beta.star + rnorm(sum(wy)) * sigma.star
+  
+  if (pmm){
+    yhatobs <- x[ry, , drop = FALSE] %*% c
+    yhatmis <- x[wy, , drop = FALSE] %*% beta.star
+    idx <- matchindex(yhatobs, yhatmis, 5)
+    return (y[ry][idx])
+  }else{
+    return (x[wy, ] %*% beta.star + rnorm(sum(wy)) * sigma.star)
+  }
 }

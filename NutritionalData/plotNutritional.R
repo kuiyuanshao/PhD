@@ -153,7 +153,7 @@ ggplot(rmse.2) +
         legend.title = element_text(family = "Georgia"),
         legend.text = element_text(family = "Georgia"),
         strip.text = element_text(family = "Georgia")) + 
-  scale_color_brewer(palette = "Dark2")
+  scale_color_brewer(palette = "Dark2") 
 
 ggsave("./NutritionalData/Imputation_gaussian_rmseline.png", width = 10, limitsize = F)
 

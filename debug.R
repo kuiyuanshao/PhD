@@ -1,3 +1,4 @@
+
 pacman::p_load("caret", "mice", "ggplot2", "survival", "data.table", "plyr", "patchwork")
 
 setwd(dir = getwd())
@@ -9,19 +10,83 @@ for (var in c("A.star", "D.star", "C.star", "A", "D", "C", "CFAR_PID", "X.1")){
   data[[var]] <- NULL
 }
 
-categorical_cols <- c("ade.star", "ade", "R", "fu.star_cut", "X_cut", "Strata")
+source("./GANs/cWGAIN-GP.R")
 
-target_variables_1 = c("lastC.star", 
+vars <- c("lastC", 
+          "FirstOImonth", "FirstARTmonth",
+          "AGE_AT_LAST_VISIT",
+          "ARTage", "OIage", "last.age", "fu")
+
+categorical_cols <- c("ade.star", "ade", "R", "lastC.star_mode", "FirstOImonth.star_mode", 
+                      "FirstARTmonth.star_mode", "AGE_AT_LAST_VISIT.star_mode", 
+                      "ARTage.star_mode", "OIage.star_mode", 
+                      "last.age.star_mode", "fu.star_mode", "lastC_mode", 
+                      "FirstOImonth_mode", "FirstARTmonth_mode",
+                      "AGE_AT_LAST_VISIT_mode",
+                      "ARTage_mode", "OIage_mode", "last.age_mode", "fu_mode")
+
+target_variables_1 <- c("lastC.star", 
                        "FirstOImonth.star", "FirstARTmonth.star",
                        "AGE_AT_LAST_VISIT.star", 
                        "ARTage.star", "OIage.star", "last.age.star", 
-                       "ade.star", "fu.star")
-target_variables_2 = c("lastC", 
+                       "ade.star", "fu.star",
+                       
+                       "lastC.star_mode", "FirstOImonth.star_mode", 
+                       "FirstARTmonth.star_mode", "AGE_AT_LAST_VISIT.star_mode", 
+                       "ARTage.star_mode", "OIage.star_mode", 
+                       "last.age.star_mode", "fu.star_mode")
+
+target_variables_2 <- c("lastC", 
                        "FirstOImonth", "FirstARTmonth",
                        "AGE_AT_LAST_VISIT",
                        "ARTage", "OIage", "last.age", 
-                       "ade", "fu")
-true <- generateUnDiscretizeData(alldata)
+                       "ade", "fu", 
+                       
+                       "lastC_mode", 
+                       "FirstOImonth_mode", "FirstARTmonth_mode",
+                       "AGE_AT_LAST_VISIT_mode",
+                       "ARTage_mode", "OIage_mode", "last.age_mode", "fu_mode")
+
+
+gain_imp <- cwgangp(data, m = 1, 
+                    params = list(batch_size = 256, gamma = 1, lambda = 10, alpha = 1, beta = 1, 
+                                  lr_g = 1e-4, lr_d = 1e-4, 
+                                  n = 10000, g_layers = 5, discriminator_steps = 1), 
+                    sampling_info = list(phase1_cols = target_variables_1, 
+                                         phase2_cols = target_variables_2, 
+                                         weight_col = "W",
+                                         categorical_cols = categorical_cols), 
+                    device = "cpu",
+                    norm_method = "mode")
+save(gain_imp, file = "gain_imp_4.RData")
+load("gain_imp_1.RData")
+imputed_data_list <- gain_imp$imputation
+generator_output_list <- gain_imp$sample
+loss <- gain_imp$loss
+
+replicate <- reCalc(imputed_data_list[[1]])
+
+st1 <- exclude(replicate, FirstARTmonth = "FirstARTmonth", 
+               OIage = "OIage", ARTage = "ARTage", 
+               fu = "fu", AGE_AT_LAST_VISIT = "AGE_AT_LAST_VISIT")
+imp_mod.1 <- coxph(Surv(fu, ade) ~ X, data = st1, y = FALSE)
+imp_mod.1
+truth <- generateUnDiscretizeData(alldata)
+truthexc <- exclude(truth)
+true <- coxph(Surv(fu, ade) ~ X, data = truthexc, y = FALSE)
+
+ggplot() + geom_line(aes(x = 1:10000, y = loss$`G Loss`, colour = "red")) + 
+  geom_line(aes(x = 1:10000, y = loss$`D Loss`))
+
+ggplot() + geom_density(aes(x = imputed_data_list[[1]]$fu)) + 
+  geom_density(aes(x = truth$fu))
+
+ggplot() + geom_density(aes(x = imputed_data_list[[1]]$ade)) + 
+  geom_density(aes(x = truth$ade)) 
+
+
+
+
 
 pmm <- function(yhatobs, yhatmis, yobs, k) {
   idx <- mice::matchindex(d = yhatobs, t = yhatmis, k = k)
@@ -49,17 +114,21 @@ data$R <- NULL
 data_init2$R <- NULL
 
 
-pmm_obj.1 <- mice(data, m = 1, print = FALSE, maxit = 1,
-                  maxcor = 1.0001, #ls.meth = "ridge", ridge = 0.1,
-                  remove.collinear = F, matchtype = 1L, 
+pmm_obj.1 <- mice(data, m = 1, print = FALSE, maxit = 25,
+                  maxcor = 1.0001, ls.meth = "ridge", ridge = 0.1,
+                  remove.collinear = F,  
                   visitSequence = c("lastC", "AGE_AT_LAST_VISIT", "last.age",
-                                    "FirstARTmonth", "ARTage", "FirstOImonth", "OIage",
-                                    "ade", "fu"),
-                  #predictorMatrix = quickpred(data),
+                    "FirstARTmonth", "ARTage", "FirstOImonth", "OIage",
+                    "ade", "fu"),
                   method = "pmm")
 pmm_res <- complete(pmm_obj.1, 1)
-imp_mod.1 <- coxph(Surv(fu, ade) ~ X, data = pmm_res, y = FALSE)
+replicate <- reCalc(pmm_res)
 
+st1 <- exclude(replicate, FirstARTmonth = "FirstARTmonth", 
+               OIage = "OIage", ARTage = "ARTage", 
+               fu = "fu", AGE_AT_LAST_VISIT = "AGE_AT_LAST_VISIT")
+imp_mod.1 <- coxph(Surv(fu, ade) ~ X, data = st1, y = FALSE)
+imp_mod.1
 
 
 predM <- pmm_obj.1$predictorMatrix

@@ -1,6 +1,72 @@
 library(torch)
 library(progress)
 
+mode_specific_normalization <- function(data, numeric_cols, n_modes = 2) {
+  if (!require(mclust, quietly = TRUE)) {
+    install.packages("mclust")
+    library(mclust)
+  }
+  
+  data_norm <- data
+  mode_params <- list()
+  
+  for (col in numeric_cols) {
+    curr_col <- data[[col]]
+    curr_col_obs <- curr_col[!is.na(curr_col)]
+    if (length(unique(curr_col)) == 1){
+      mc <- Mclust(curr_col_obs, G = 1)
+    }else{
+      mc <- Mclust(curr_col_obs, G = n_modes)
+    }
+    pred <- predict(mc, newdata = curr_col_obs)
+    mode_labels <- pred$classification
+    mode_means <- numeric(n_modes)
+    mode_sds <- numeric(n_modes)
+    
+    curr_col_norm <- rep(NA, length(curr_col_obs))
+    for (mode in 1:n_modes) {
+      idx <- which(mode_labels == mode)
+      mode_means[mode] <- mean(curr_col_obs[idx])
+      mode_sds[mode] <- sd(curr_col_obs[idx]) + 1e-6
+      if (is.na(sd(curr_col_obs[idx]))){
+        curr_col_norm[idx] <- (curr_col_obs[idx] - mode_means[mode])
+      }else{
+        curr_col_norm[idx] <- (curr_col_obs[idx] - mode_means[mode]) / mode_sds[mode]
+      }
+    }
+    mode_labels_curr_col <- rep(NA, length(curr_col))
+    mode_labels_curr_col[!is.na(curr_col)] <- mode_labels
+    
+    curr_col[!is.na(curr_col)] <- curr_col_norm
+    data_norm[[col]] <- curr_col
+    data_norm[[paste0(col, "_mode")]] <- mode_labels_curr_col
+    mode_params[[col]] <- list(mode_means = mode_means, mode_sds = mode_sds)
+  }
+  
+  return(list(data = data_norm, mode_params = mode_params))
+}
+
+mode_specific_inverse <- function(data, numeric_cols, mode_params){
+  for (col in numeric_cols){
+    curr_col <- data[[col]]
+    curr_labels <- data[[paste0(col, "_mode")]]
+    curr_transform <- rep(NA, length(curr_col))
+    
+    mode_means <- mode_params[[col]][["mode_means"]]
+    mode_sds <- mode_params[[col]][["mode_sds"]]
+    for (mode in unique(curr_labels)){
+      idx <- which(curr_labels == mode)
+      if (is.na(mode_sds[as.integer(mode)])){
+        curr_transform[idx] <- curr_col[idx] + mode_means[as.integer(mode)]
+      }else{
+        curr_transform[idx] <- curr_col[idx] * mode_sds[as.integer(mode)] + mode_means[as.integer(mode)] 
+      }
+    }
+    data[[col]] <- curr_transform
+  }
+  return (data)
+}
+
 # Function to one-hot encode categorical variables
 one_hot_encode <- function(data, categorical_cols) {
   new_data <- data[, !names(data) %in% categorical_cols]
@@ -27,6 +93,9 @@ onehot_backtransform <- function(data, binary_indices) {
   original_data <- data[, -unlist(binary_indices)]
   for (var_name in names(binary_indices)) {
     indices <- binary_indices[[var_name]]
+    for (i in indices){
+      data[, i] <- ifelse(data[, i, drop = FALSE] >= 0.5, 1, 0)
+    }
     binary_cols <- data[, indices, drop = FALSE]
     original_data[[var_name]] <- apply(binary_cols, 1, function(row) {
       matched <- which(row == 1)
@@ -64,28 +133,32 @@ generateImpute <- function(generator, m = 5, info_list){
       output_tensor[[i]] <- as.matrix(G_sample$detach()$cpu())
     }
     output_tensor <- do.call(rbind, output_tensor)
-    output_tensor <- cbind(output_tensor, as.matrix(weights$detach()$cpu()))
+    output_tensor <- as.data.frame(cbind(output_tensor, as.matrix(weights$detach()$cpu())))
     
-    sample <- denormalize(output_tensor, data_info, data_norm, method = method)
+    names(output_tensor) <- names(reordered)
+    sample <- onehot_backtransform(output_tensor, encode_result$binary_indices)
+    data_info$numeric_cols <- numeric_cols
+    sample <- denormalize(sample, data_info, data_norm, method = method)
+    
+    sample <- sample[, !grepl("_mode$", names(sample))]
+    sample <- sample[, names(data_norm$data_ori)]
     
     data <- data_norm$data_ori
+    data_mask <- as.matrix(1 - is.na(data))
     data[is.na(data)] <- 0
+    sample[] <- lapply(sample, as.numeric)
+    imputation <- as.data.frame(data_mask * as.matrix(data) + 
+      (1 - data_mask) * as.matrix(sample))
+    names(imputation) <- names(data)
     
-    imputation <- as.matrix(data_mask$cpu()$detach()) * data + 
-      (1 - as.matrix(data_mask$cpu()$detach())) * sample
-    
-    for (i in data_info$phase2_cols){
-      if (i %in% data_info$numeric_cols){
-        pmm_matched <- pmm(sample[data_info$phase2_rows, i], 
-                           sample[data_info$phase1_rows, i], 
-                           data[data_info$phase2_rows, i], 100)
-        imputation[data_info$phase1_rows, i] <- pmm_matched
-      }
-    }
-    
-    imputation <- onehot_backtransform(imputation, encode_result$binary_indices)
-    sample <- onehot_backtransform(sample, encode_result$binary_indices)
-    
+    #for (i in data_info$phase2_cols){
+    #  if (i %in% data_info$numeric_cols){
+    #    pmm_matched <- pmm(sample[data_info$phase2_rows, i], 
+    #                       sample[data_info$phase1_rows, i], 
+    #                       data[data_info$phase2_rows, i], 100)
+    #    imputation[data_info$phase1_rows, i] <- pmm_matched
+    #  }
+    #}
     imputed_data_list[[z]] <- type.convert(imputation, as.is =TRUE)
     sample_data_list[[z]] <- type.convert(sample, as.is =TRUE)
   }
@@ -98,47 +171,45 @@ samplebatches <- function(info_list, batch_size, at_least_p = 0.2, device = "cpu
   ind_phase2 <- data_info$phase2_rows
   
   #Provide a case-control based depending on phase1 and phase2 logical variables
-  # phase1_binary_cols <- data_info$phase1_cols[!(data_info$phase1_cols %in% data_info$numeric_cols)]
-  # phase2_binary_cols <- data_info$phase2_cols[!(data_info$phase2_cols %in% data_info$numeric_cols)]
-  # #sample a binary variate to case control on in current sample
-  # curr_col_1 <- sample(phase1_binary_cols, 1)
-  # curr_col_2 <- sample(phase2_binary_cols, 1)
-  # 
-  # cases_1 <- data_norm$data[, curr_col_1, drop = F]
-  # cases_2 <- data_norm$data[, curr_col_2, drop = F]
-  # 
-  # cases_phase1 <- cases_1[ind_phase1]
-  # cases_phase2 <- cases_2[ind_phase2]
-  # 
-  # sampled <- c()
-  # 
-  # unicase <- unique(cases_phase1)
-  # n_unicase <- length(unicase)
-  # 
-  # n1 <- batch_size - as.integer(at_least_p * batch_size)
-  # n2 <- as.integer(at_least_p * batch_size)
-  # 
-  # n1 <- c(floor(n1 / 2), ceiling(n1 / 2))
-  # n2 <- c(floor(n2 / 2), ceiling(n2 / 2))
-  # 
-  # for (case in 1:n_unicase){
-  #   phase1 <- ind_phase1[which(cases_phase1 == unicase[case])]
-  #   phase2 <- ind_phase2[which(cases_phase2 == unicase[case])]
-  # 
-  #   sampphase1 <- sample(phase1, size = n1[case],
-  #                        prob = data_norm$data_ori[phase1, data_info$weight_col] /
-  #                          sum(data_norm$data_ori[phase1, data_info$weight_col]))
-  #   sampphase2 <- sample(phase2, size = n2[case],
-  #                        prob = data_norm$data_ori[phase2, data_info$weight_col] /
-  #                          sum(data_norm$data_ori[phase2, data_info$weight_col]))
-  #   sampled <- c(sampled, sampphase1, sampphase2)
-  # }
-  sampphase2 <- sample(ind_phase2, size = as.integer(at_least_p * batch_size),
-                      prob = data_norm$data_ori[ind_phase2, data_info$weight_col] / sum(data_norm$data_ori[ind_phase2, data_info$weight_col]))
-  sampphase1 <- sample(ind_phase1, size = batch_size - as.integer(at_least_p * batch_size),
-                      prob = data_norm$data_ori[ind_phase1, data_info$weight_col] / sum(data_norm$data_ori[ind_phase1, data_info$weight_col]))
+  phase1_binary_cols <- data_info$phase1_cols[!(data_info$phase1_cols %in% data_info$numeric_cols)]
+  phase2_binary_cols <- data_info$phase2_cols[!(data_info$phase2_cols %in% data_info$numeric_cols)]
+  #sample a binary variate to case control on in current sample
+  curr_col_1 <- sample(phase1_binary_cols, 1)
+  curr_col_2 <- sample(phase2_binary_cols, 1)
 
-  sampled <- sample(c(sampphase2, sampphase1))
+  cases_1 <- reordered[, curr_col_1]
+  cases_2 <- reordered[, curr_col_2]
+  cases_phase1 <- cases_1[ind_phase1]
+  cases_phase2 <- cases_2[ind_phase2]
+
+  sampled <- c()
+
+  unicase <- unique(cases_phase1)
+  n_unicase <- length(unicase)
+
+  n1 <- batch_size - as.integer(at_least_p * batch_size)
+  n2 <- as.integer(at_least_p * batch_size)
+
+  n1 <- c(floor(n1 / 2), ceiling(n1 / 2))
+  n2 <- c(floor(n2 / 2), ceiling(n2 / 2))
+
+  for (case in 1:n_unicase){
+    phase1 <- ind_phase1[which(cases_phase1 == unicase[case])]
+    phase2 <- ind_phase2[which(cases_phase2 == unicase[case])]
+
+    sampphase1 <- sample(phase1, size = n1[case])
+                         #prob = data_norm$data_ori[phase1, data_info$weight_col] /
+                         #  sum(data_norm$data_ori[phase1, data_info$weight_col]))
+    sampphase2 <- sample(phase2, size = n2[case])
+                         #prob = data_norm$data_ori[phase2, data_info$weight_col] /
+                         #   sum(data_norm$data_ori[phase2, data_info$weight_col]))
+    sampled <- c(sampled, sampphase1, sampphase2)
+  }
+  # sampphase2 <- sample(ind_phase2, size = as.integer(at_least_p * batch_size))
+  #                     #prob = data_norm$data_ori[ind_phase2, data_info$weight_col] / sum(data_norm$data_ori[ind_phase2, data_info$weight_col]))
+  # sampphase1 <- sample(ind_phase1, size = batch_size - as.integer(at_least_p * batch_size))
+  #                     #prob = data_norm$data_ori[ind_phase1, data_info$weight_col] / sum(data_norm$data_ori[ind_phase1, data_info$weight_col]))
+  #sampled <- sample(c(sampphase2, sampphase1))
   batches <- list(X = phase2_variables[sampled, ],
                   C = phase1_variables[sampled, ],
                   M = data_mask[sampled, ],
@@ -209,6 +280,11 @@ normalize <- function(data, data_info, method = "none"){
     return (list(data = data_norm,
                  maxs = maxs,
                  data_ori = data))
+  }else if (method == "mode"){
+    data_norm <- mode_specific_normalization(data, names(data)[data_info$numeric_cols], n_modes = 2)
+    return (list(data = data_norm$data,
+                 mode_params = data_norm$mode_params,
+                 data_ori = data))
   }else if (method == "none"){
     return (list(data = data, data_ori = data))
   }
@@ -246,11 +322,11 @@ denormalize <- function(data, data_info, params, method = "none"){
         ifelse(data[, i] >= 0.5, 1, 0)
       }
     }))
+  }else if (method == "mode"){
+    data <- mode_specific_inverse(data, data_info$numeric_cols, params$mode_params)
   }else if (method == "none"){
     data <- as.data.frame(data)
   }
-  data <- as.data.frame(data)
-  names(data) <- data_info$names
   return (data)
 }
 
@@ -329,13 +405,17 @@ cwgangp <- function(data, m = 5,
                     sampling_info = list(phase1_cols = "X_tilde", phase2_cols = "X", weight_col = "W", 
                                          categorical_cols = c("R", "Z"), outcome_cols = c("Y")), 
                     device = "cpu",
-                    norm_method = "min-max"){
+                    norm_method = "mode"){
   list2env(params, envir = environment())
   list2env(sampling_info, envir = environment())
   
   device <- torch_device(device)
-
-  encode_result <- one_hot_encode(data, sampling_info$categorical_cols)
+  
+  data_info <- getdatainfo(data, sampling_info)
+  numeric_cols <- data_info$names[data_info$numeric_cols]
+  
+  data_norm <- normalize(data, data_info, method = norm_method)
+  encode_result <- one_hot_encode(data_norm$data, sampling_info$categorical_cols)
   
   nRow <- dim(encode_result$data)[1]
   nCol <- dim(encode_result$data)[2]
@@ -357,14 +437,12 @@ cwgangp <- function(data, m = 5,
   
   encode_result$binary_indices <- binary_indices_reordered
   data_info <- getdatainfo(reordered, sampling_info)
-  data_norm <- normalize(reordered, data_info, method = norm_method)
+  data_mask <- torch_tensor(1 - is.na(reordered), device = device)
   
-  data_mask <- torch_tensor(1 - is.na(data_norm$data), device = device)
+  phase1_variables <- torch_tensor(as.matrix(reordered[, -c(data_info$phase2_cols, data_info$weight_col)]), device = device)
+  weights <- torch_tensor(as.matrix(reordered[, data_info$weight_col]), device = device)
   
-  phase1_variables <- torch_tensor(as.matrix(data_norm$data[, -c(data_info$phase2_cols, data_info$weight_col)]), device = device)
-  weights <- torch_tensor(as.matrix(data_norm$data[, data_info$weight_col]), device = device)
-  
-  phase2_variables <- data_norm$data[, data_info$phase2_cols]
+  phase2_variables <- reordered[, data_info$phase2_cols]
   phase2_variables[is.na(phase2_variables)] <- 0
   phase2_variables <- torch_tensor(as.matrix(phase2_variables), device = device)
   
@@ -442,14 +520,12 @@ cwgangp <- function(data, m = 5,
   mse_cols <- which(data_info$phase2_cols %in% data_info$numeric_cols)
   cat_cols <- which(!data_info$phase2_cols %in% data_info$numeric_cols)
   
-  info_list <- list(phase1_variables = phase1_variables, 
-                    phase2_variables = phase2_variables,
-                    data_mask = data_mask, data_info = data_info,
-                    data_norm = data_norm, sampling_info = sampling_info,
-                    encode_result = encode_result,
+  info_list <- list(phase1_variables = phase1_variables, phase2_variables = phase2_variables,
+                    data_mask = data_mask, data_norm = data_norm, 
+                    sampling_info = sampling_info, data_info = data_info,
+                    encode_result = encode_result, reordered = reordered,
                     method = norm_method, weights = weights,
-                    batch_size = batch_size,
-                    device = device)
+                    batch_size = batch_size, device = device, numeric_cols = numeric_cols)
   epoch_result <- list()
   p <- 1
   warm_up <- 0#as.integer(0.1 * n)

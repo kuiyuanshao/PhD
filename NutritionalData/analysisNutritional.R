@@ -1,7 +1,5 @@
 pacman::p_load("survey", "readxl", "stringr", "dplyr", "purrr")
 
-
-
 read_excel_allsheets <- function(filename, tibble = FALSE) {
   sheets <- readxl::excel_sheets(filename)
   x <- lapply(sheets, function(X) readxl::read_excel(filename, sheet = X))
@@ -69,16 +67,16 @@ for (i in 1:n){
   setTxtProgressBar(pb, i)
   digit <- str_pad(i, nchar(4444), pad=0)
   for (j in 1:length(foldernames)){
-    if (!file.exists(paste0("./Diffusion/imputations", 
+    if (!file.exists(paste0("../Diffusion/imputations", 
                             foldernames[j], foldernames[j], "_", digit, ".xlsx"))){
       next
     }
     cat(digit, ":", foldernames[j], "\n")
-    load(paste0("./NutritionalData/Output/NutritionalData_", digit, ".RData"))
+    load(paste0("./Output/NutritionalData_", digit, ".RData"))
     curr_sample <- read.csv(paste0("./NutritionalSample", 
                                    foldernames[j], foldernames[j], "_", digit, ".csv"))
     
-    diff_imp <- read_excel_allsheets(paste0("./Diffusion/imputations", 
+    diff_imp <- read_excel_allsheets(paste0("../Diffusion/imputations", 
                                             foldernames[j], foldernames[j], "_", digit, ".xlsx"))
     imp_coefs_vars.diff <- find_coef_var(imp = diff_imp, sample = curr_sample, type = "diffusion", design = foldernames[j])
     
@@ -91,13 +89,13 @@ for (i in 1:n){
     complete.2 <- glm(sbp ~ c_ln_na_true + c_age + c_bmi + high_chol + usborn + 
                            female + bkg_o + bkg_pr, family = gaussian(), data = curr_sample)
     
-    load(paste0("./NutritionalData/NutritionalSample/MICE", 
+    load(paste0("./NutritionalSample/MICE", 
                 foldernames[j], "/MICE_IMPUTE_", digit, ".RData"))
     imp_coefs_vars.mice <- find_coef_var(imp = imputed_data_list, sample = curr_sample, type = "mice", design = foldernames[j])
-    load(paste0("./NutritionalData/NutritionalSample/MIXGB", 
+    load(paste0("./NutritionalSample/MIXGB", 
                 foldernames[j], "/MIXGB_IMPUTE_", digit, ".RData"))
     imp_coefs_vars.mixgb <- find_coef_var(imp = imputed_data_list, sample = curr_sample, type = "mixgb", design = foldernames[j])
-    load(paste0("./NutritionalData/NutritionalSample/GANs", 
+    load(paste0("./NutritionalSample/GANs", 
                 foldernames[j], "/GANs_IMPUTE_", digit, ".RData"))
     imp_coefs_vars.gans <- find_coef_var(imp = imputed_data_list, sample = curr_sample, type = "gans", design = foldernames[j])
 
@@ -141,6 +139,6 @@ for (i in 1:n){
 }
 close(pb)
 
-save(result_df.1, result_df.2, file = "./NutritionalData/NutritionalSample/result_imputation.RData")
+save(result_df.1, result_df.2, file = "./NutritionalSample/result_imputation.RData")
 
 

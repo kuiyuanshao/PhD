@@ -15,7 +15,8 @@ exactAllocation <- function(data, stratum_variable, target_variable, sample_size
   Y_bars <- aggregate(as.formula(paste0(target_variable, " ~ ", stratum_variable)), data = data, FUN = function(x) sum(x) / length(x))
   colnames(Y_bars)[2] <- "Y_bars"
   data <- merge(data, Y_bars, by = stratum_variable)
-  Ss <- aggregate(as.formula(paste0("(", target_variable, " - Y_bars", ")^2", " ~ ", stratum_variable)), data = data, FUN = function(x) sum(x) / (length(x) - 1))
+  Ss <- aggregate(as.formula(paste0("(", target_variable, " - Y_bars", ")^2", " ~ ", stratum_variable)), 
+                  data = data, FUN = function(x) sum(x) / (length(x) - 1))
 
   NS <- strata_units$count * sqrt(Ss[, 2])
   names(NS) <- Ss[, 1]
